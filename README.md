@@ -1,4 +1,4 @@
-# FitMatch 
+# FitMatch
 
 FitMatch es una aplicación móvil desarrollada como proyecto Capstone, orientada a conectar personas interesadas en realizar actividades deportivas.
 
@@ -48,7 +48,6 @@ FitMatch/
 ├── package.json
 ├── package-lock.json
 └── tsconfig.json
-
 ```
 
 ## Requisitos
