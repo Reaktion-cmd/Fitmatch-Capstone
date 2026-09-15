@@ -168,3 +168,108 @@ La definición final deberá considerar aspectos como:
 - Herramientas que utilizan actualmente para organizar actividades deportivas.
 
 
+---
+
+## 9. Tecnologías utilizadas
+
+FitMatch está siendo desarrollado utilizando las siguientes tecnologías:
+
+- **React Native 0.86.3:** framework utilizado para el desarrollo de la aplicación móvil.
+- **React 19.2.3:** biblioteca utilizada para la construcción de interfaces de usuario.
+- **Expo 57.0.22:** plataforma utilizada para facilitar el desarrollo, ejecución y pruebas de la aplicación.
+- **Expo Router 57.0.21:** utilizado para gestionar la navegación entre las distintas pantallas de la aplicación.
+- **TypeScript 6.0.3:** lenguaje utilizado para el desarrollo del proyecto con tipado estático.
+- **Supabase JS 2.116.0:** utilizado para la conexión con los servicios de Supabase.
+- **Supabase:** utilizado como servicio de backend, autenticación y base de datos.
+- **Expo Location 57.0.17:** dependencia considerada para funcionalidades relacionadas con ubicación y geolocalización.
+- **Git:** utilizado para el control de versiones del proyecto.
+- **GitHub:** utilizado como repositorio remoto y herramienta de colaboración del equipo.
+- **Node.js y npm:** utilizados para la gestión y ejecución de las dependencias del proyecto.
+
+Las tecnologías y versiones podrán ser actualizadas durante el desarrollo en caso de que exista una necesidad técnica, dejando registro de los cambios realizados.
+
+
+---
+
+## 10. Presupuesto
+
+El proyecto FitMatch se encuentra en etapa de desarrollo académico, por lo que actualmente no se ha definido un presupuesto monetario definitivo.
+
+En la etapa inicial se priorizará el uso de herramientas y servicios que dispongan de planes gratuitos o recursos sin costo para desarrollo y pruebas.
+
+Entre los posibles elementos que podrían generar costos en etapas posteriores se consideran:
+
+- Servicios de backend y base de datos.
+- Servicios de autenticación.
+- APIs de mapas o geolocalización.
+- Servicios de notificaciones.
+- Almacenamiento de archivos.
+- Publicación de la aplicación en tiendas digitales.
+- Servicios de infraestructura o escalabilidad.
+- Herramientas externas necesarias para futuras funcionalidades.
+
+El presupuesto será actualizado a medida que se definan las tecnologías, servicios y requerimientos definitivos del proyecto.
+
+**Presupuesto inicial estimado:** Pendiente de definir.
+
+
+---
+
+## 11. Riesgos principales
+
+Durante el desarrollo de FitMatch se identifican preliminarmente los siguientes riesgos:
+
+- **Alcance excesivo del proyecto:** intentar desarrollar demasiadas funcionalidades dentro del tiempo disponible podría afectar la calidad o impedir completar correctamente el MVP.
+
+- **Retrasos en el desarrollo:** algunas funcionalidades pueden requerir más tiempo de implementación del estimado inicialmente.
+
+- **Dificultades técnicas de integración:** pueden presentarse problemas al integrar React Native, Supabase, geolocalización, autenticación u otros servicios utilizados por la aplicación.
+
+- **Complejidad de la lógica de Match:** definir e implementar correctamente los criterios de compatibilidad entre usuarios puede requerir ajustes durante el desarrollo.
+
+- **Problemas relacionados con geolocalización:** la gestión de permisos, distancia, ubicación y privacidad puede generar dificultades técnicas o de seguridad.
+
+- **Falta de evidencia suficiente del problema:** si no se recopilan datos mediante encuestas, entrevistas u otros mecanismos de validación, podría resultar difícil demostrar que la problemática identificada realmente afecta a los usuarios objetivo.
+
+- **Baja participación en pruebas:** una cantidad reducida de usuarios durante las pruebas podría limitar la calidad de los resultados obtenidos.
+
+- **Riesgos de seguridad y privacidad:** FitMatch trabajará con información personal, perfiles, ubicación y eventualmente conversaciones, por lo que será necesario controlar adecuadamente el acceso a la información.
+
+- **Cambios en los requisitos:** durante el desarrollo pueden surgir nuevas necesidades o modificaciones en las funcionalidades definidas inicialmente.
+
+- **Dependencia de servicios externos:** cambios, limitaciones o problemas de disponibilidad en servicios como Supabase u otras APIs podrían afectar algunas funcionalidades de la aplicación.
+
+
+---
+
+## 12. Indicadores de éxito
+
+Para evaluar el cumplimiento de los objetivos del proyecto FitMatch, se consideran preliminarmente los siguientes indicadores:
+
+- Porcentaje de usuarios que logra completar correctamente el proceso de registro.
+- Porcentaje de usuarios que logra crear y configurar su perfil deportivo.
+- Porcentaje de usuarios que logra seleccionar sus deportes y nivel deportivo.
+- Porcentaje de usuarios que logra encontrar otros usuarios o actividades compatibles.
+- Porcentaje de usuarios que logra crear correctamente un evento deportivo.
+- Porcentaje de usuarios que logra unirse a un evento.
+- Porcentaje de usuarios que logra confirmar su participación.
+- Tiempo promedio requerido para crear un evento.
+- Tiempo promedio requerido para encontrar un usuario o actividad deportiva.
+- Cantidad de errores detectados durante las pruebas funcionales.
+- Nivel de satisfacción de los usuarios participantes en las pruebas.
+- Tiempo de respuesta de las principales funcionalidades de la aplicación.
+
+Los valores objetivo para cada indicador serán definidos posteriormente, una vez que se diseñen y ejecuten las pruebas del sistema.
+
+
+---
+
+## 13. Estado del documento
+
+**Versión:** 0.1
+
+**Estado:** Borrador inicial.
+
+**Última actualización:** 14-09-2026
+
+Este documento corresponde a una primera versión de la ficha del proyecto FitMatch y será actualizado progresivamente a medida que avance el desarrollo, se validen los usuarios objetivo, se definan los requisitos y se obtengan resultados de pruebas y validaciones.
