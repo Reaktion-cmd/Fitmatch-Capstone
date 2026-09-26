@@ -1,55 +1,65 @@
 import { Tabs } from 'expo-router';
-import { Text } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+
+const AZUL = '#5064EF';
 
 export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#2563EB',
-        tabBarInactiveTintColor: '#64748B',
+        tabBarActiveTintColor: '#FFFFFF',
+        tabBarInactiveTintColor: '#D9DFFD',
         tabBarStyle: {
           height: 65,
-          paddingBottom: 10,
-          paddingTop: 8,
-          backgroundColor: '#FFFFFF',
-          borderTopWidth: 1,
-          borderTopColor: '#E2E8F0',
+          paddingBottom: 9,
+          paddingTop: 7,
+          backgroundColor: AZUL,
+          borderTopWidth: 0,
+          maxWidth: 480,
+          width: '100%',
+          alignSelf: 'center',
         },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '600',
-        },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '500' },
       }}
     >
       <Tabs.Screen
-        name="index"
+        name="deslizar"
         options={{
-          title: 'Match 1v1',
-          tabBarIcon: () => <Text style={{ fontSize: 20 }}>🔥</Text>,
+          title: 'Deslizar',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="home-outline" size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
-        name="eventos"
+        name="index"
         options={{
-          title: 'Eventos',
-          tabBarIcon: () => <Text style={{ fontSize: 20 }}>⚽</Text>,
+          title: 'Explorar',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="search-outline" size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="chat"
         options={{
           title: 'Chat',
-          tabBarIcon: () => <Text style={{ fontSize: 20 }}>💬</Text>,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="chatbubble-ellipses-outline" size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="perfil"
         options={{
           title: 'Perfil',
-          tabBarIcon: () => <Text style={{ fontSize: 20 }}>👤</Text>,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="person-circle-outline" size={size} color={color} />
+          ),
         }}
       />
+      <Tabs.Screen name="eventos" options={{ href: null }} />
     </Tabs>
   );
 }
