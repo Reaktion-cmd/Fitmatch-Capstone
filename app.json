@@ -1,15 +1,18 @@
 {
   "expo": {
-    "name": "mi-app-deportiva",
+    "name": "FitMatch",
     "slug": "mi-app-deportiva",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
+    "scheme": "fitmatch",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.honwito.fitmatch"
     },
     "android": {
+      "package": "com.honwito.fitmatch",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -23,7 +26,20 @@
     },
     "plugins": [
       "expo-router",
-      "expo-status-bar"
-    ]
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "FitMatch utiliza tu ubicación para mostrar deportistas y actividades cercanas según tus preferencias."
+        }
+      ],
+      "expo-font",
+      "expo-asset"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "5e7e237f-567a-49ee-a4b3-23b6c83397ec"
+      }
+    }
   }
 }
