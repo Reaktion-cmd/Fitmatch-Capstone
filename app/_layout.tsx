@@ -1,5 +1,5 @@
 import { Stack } from 'expo-router';
-import { ThemeProvider, useTheme } from './lib/ThemeContext';
+import { ThemeProvider, useTheme } from '../lib/ThemeContext';
 
 function RootNavigator() {
   const { colors } = useTheme();

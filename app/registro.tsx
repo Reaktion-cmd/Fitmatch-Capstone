@@ -12,8 +12,8 @@ import {
 } from 'react-native';
 
 import { useRouter } from 'expo-router';
-import { supabase } from './lib/supabase';
-import { useTheme } from './lib/ThemeContext';
+import { supabase } from '../lib/supabase';
+import { useTheme } from '../lib/ThemeContext';
 
 export default function RegistroScreen() {
   const { colors } = useTheme();

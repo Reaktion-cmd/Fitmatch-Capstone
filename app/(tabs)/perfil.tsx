@@ -11,8 +11,8 @@ import {
   Switch,
 } from 'react-native';
 
-import { supabase } from '../lib/supabase';
-import { useTheme } from '../lib/ThemeContext';
+import { supabase } from '../../lib/supabase';
+import { useTheme } from '../../lib/ThemeContext';
 import { useRouter } from 'expo-router';
 
 export default function PerfilScreen() {

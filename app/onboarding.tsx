@@ -12,7 +12,7 @@ import {
 
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
-import { useTheme } from './lib/ThemeContext';
+import { useTheme } from '../lib/ThemeContext';
 
 export default function OnboardingScreen() {
   const { isDark, colors } = useTheme();

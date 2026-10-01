@@ -13,7 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTheme } from '../lib/ThemeContext';
+import { useTheme } from '../../lib/ThemeContext';
 
 // Pantalla de demostración visual:
 // las categorías y los eventos son datos locales.

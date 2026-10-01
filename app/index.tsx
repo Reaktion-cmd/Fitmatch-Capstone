@@ -9,10 +9,11 @@ import {
   Image,
 } from 'react-native';
 
-import { Link } from 'expo-router';
-import { useTheme } from './lib/ThemeContext';
+import { useRouter } from 'expo-router';
+import { useTheme } from '../lib/ThemeContext';
 
 export default function WelcomeScreen() {
+  const router = useRouter();
   const { isDark, colors } = useTheme();
 
   return (
@@ -26,9 +27,6 @@ export default function WelcomeScreen() {
     >
       <View style={styles.container}>
         <View style={styles.headerBox}>
-
-          {/* Logo FitMatch */}
-
           <View
             style={[
               styles.logoContainer,
@@ -36,7 +34,6 @@ export default function WelcomeScreen() {
                 backgroundColor: isDark
                   ? '#1E293B'
                   : '#EFF6FF',
-
                 borderColor: colors.border,
               },
             ]}
@@ -73,49 +70,41 @@ export default function WelcomeScreen() {
         </View>
 
         <View style={styles.buttonGroup}>
+          <TouchableOpacity
+            style={[
+              styles.primaryButton,
+              {
+                backgroundColor: colors.primary,
+              },
+            ]}
+            onPress={() => router.push('/login')}
+          >
+            <Text style={styles.primaryButtonText}>
+              Iniciar Sesión
+            </Text>
+          </TouchableOpacity>
 
-          {/* Iniciar sesión */}
-
-          <Link href="/login" asChild>
-            <TouchableOpacity
+          <TouchableOpacity
+            style={[
+              styles.secondaryButton,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+              },
+            ]}
+            onPress={() => router.push('/registro')}
+          >
+            <Text
               style={[
-                styles.primaryButton,
+                styles.secondaryButtonText,
                 {
-                  backgroundColor: colors.primary,
+                  color: colors.text,
                 },
               ]}
             >
-              <Text style={styles.primaryButtonText}>
-                Iniciar Sesión
-              </Text>
-            </TouchableOpacity>
-          </Link>
-
-          {/* Crear cuenta */}
-
-          <Link href="/registro" asChild>
-            <TouchableOpacity
-              style={[
-                styles.secondaryButton,
-                {
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.secondaryButtonText,
-                  {
-                    color: colors.text,
-                  },
-                ]}
-              >
-                Crear Cuenta
-              </Text>
-            </TouchableOpacity>
-          </Link>
-
+              Crear Cuenta
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
     </SafeAreaView>

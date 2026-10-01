@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 
 import { useRouter } from 'expo-router';
-import { useTheme } from './lib/ThemeContext';
+import { useTheme } from '../lib/ThemeContext';
 
 const DEPORTES_DISPONIBLES = [
   { id: 'futbol', nombre: 'Fútbol', icono: '⚽' },

@@ -6,7 +6,7 @@ import {
   SafeAreaView,
 } from 'react-native';
 
-import { useTheme } from '../lib/ThemeContext';
+import { useTheme } from '../../lib/ThemeContext';
 
 export default function ChatScreen() {
   const { colors } = useTheme();

@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../lib/ThemeContext';
+import { useTheme } from '../../lib/ThemeContext';
 
 export default function TabsLayout() {
   const { isDark, colors } = useTheme();
