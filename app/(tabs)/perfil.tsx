@@ -1,15 +1,17 @@
 // ============================================================
-// FITMATCH - PANTALLA DE PERFIL
+// FITMATCH - PERFIL
 // ============================================================
-// Esta pantalla:
-// - Obtiene al usuario autenticado desde Supabase Auth.
-// - Carga sus datos desde public.profiles.
+//
+// Funciones:
+//
+// - Carga el perfil real desde Supabase.
 // - Permite editar información personal.
-// - Muestra los deportes guardados en Supabase.
-// - Muestra el nivel de juego guardado en Supabase.
-// - Permite volver a editar preferencias deportivas.
-// - Mantiene el modo claro / oscuro.
+// - Muestra deportes y nivel.
+// - Permite modificar deportes.
+// - Permite configurar radio de búsqueda.
+// - Permite cambiar modo claro / oscuro.
 // - Permite cerrar sesión.
+//
 // ============================================================
 
 import React, {
@@ -29,33 +31,19 @@ import {
   ActivityIndicator,
 } from 'react-native';
 
-// SafeAreaView recomendado actualmente para Expo / React Native.
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-// Expo Router.
 import {
   useFocusEffect,
   useRouter,
 } from 'expo-router';
 
-// Cliente de Supabase.
 import { supabase } from '../../lib/supabase';
-
-// Sistema global de tema de FitMatch.
 import { useTheme } from '../../lib/ThemeContext';
 
 
 // ============================================================
-// CATÁLOGO DE DEPORTES
-// ============================================================
-// Los IDs coinciden con los valores que guardamos en
-// profiles.sports.
-//
-// Ejemplo guardado en Supabase:
-// {futbol,padel,running}
-//
-// Gracias a este arreglo podemos transformar:
-// "futbol" -> "⚽ Fútbol"
+// DEPORTES
 // ============================================================
 
 const DEPORTES_DISPONIBLES = [
@@ -103,14 +91,46 @@ const DEPORTES_DISPONIBLES = [
 
 
 // ============================================================
-// COMPONENTE PRINCIPAL
+// RADIOS DISPONIBLES
+// ============================================================
+//
+// 0 representa "Sin límite".
+//
+// ============================================================
+
+const RADIOS_BUSQUEDA = [
+  {
+    value: 5,
+    label: '5 km',
+  },
+  {
+    value: 10,
+    label: '10 km',
+  },
+  {
+    value: 25,
+    label: '25 km',
+  },
+  {
+    value: 50,
+    label: '50 km',
+  },
+  {
+    value: 0,
+    label: 'Sin límite',
+  },
+];
+
+
+// ============================================================
+// COMPONENTE
 // ============================================================
 
 export default function PerfilScreen() {
-  // Navegación.
-  const router = useRouter();
+  const router =
+    useRouter();
 
-  // Tema global.
+
   const {
     isDark,
     colors,
@@ -119,76 +139,107 @@ export default function PerfilScreen() {
 
 
   // ==========================================================
-  // ESTADOS GENERALES DE LA PANTALLA
+  // ESTADOS GENERALES
   // ==========================================================
 
-  // Indica si estamos viendo o editando el perfil.
-  const [modoEdicion, setModoEdicion] =
-    useState(false);
+  const [
+    modoEdicion,
+    setModoEdicion,
+  ] = useState(false);
 
-  // Estado utilizado mientras Supabase carga el perfil.
-  const [cargandoPerfil, setCargandoPerfil] =
-    useState(true);
 
-  // Estado utilizado mientras guardamos cambios.
-  const [guardando, setGuardando] =
-    useState(false);
+  const [
+    cargandoPerfil,
+    setCargandoPerfil,
+  ] = useState(true);
+
+
+  const [
+    guardando,
+    setGuardando,
+  ] = useState(false);
+
+
+  const [
+    guardandoRadio,
+    setGuardandoRadio,
+  ] = useState(false);
 
 
   // ==========================================================
-  // DATOS PERSONALES DEL USUARIO
+  // DATOS PERSONALES
   // ==========================================================
 
-  const [nombre, setNombre] =
-    useState('');
+  const [
+    nombre,
+    setNombre,
+  ] = useState('');
 
-  const [edad, setEdad] =
-    useState('');
 
-  const [bio, setBio] =
-    useState('');
+  const [
+    edad,
+    setEdad,
+  ] = useState('');
 
-  const [equipo, setEquipo] =
-    useState('');
 
-  const [instagram, setInstagram] =
-    useState('');
+  const [
+    bio,
+    setBio,
+  ] = useState('');
 
-  // El correo viene desde Supabase Auth.
-  const [email, setEmail] =
-    useState('');
+
+  const [
+    equipo,
+    setEquipo,
+  ] = useState('');
+
+
+  const [
+    instagram,
+    setInstagram,
+  ] = useState('');
+
+
+  const [
+    email,
+    setEmail,
+  ] = useState('');
 
 
   // ==========================================================
   // PREFERENCIAS DEPORTIVAS
   // ==========================================================
-  // Estos datos YA NO son simulados.
-  //
-  // sports:
-  // ['futbol', 'padel', 'running']
-  //
-  // skill_level:
-  // 'Principiante'
-  // 'Intermedio'
-  // 'Avanzado'
-  // ==========================================================
 
-  const [deportes, setDeportes] =
-    useState<string[]>([]);
+  const [
+    deportes,
+    setDeportes,
+  ] = useState<string[]>([]);
 
-  const [nivelJuego, setNivelJuego] =
-    useState('');
+
+  const [
+    nivelJuego,
+    setNivelJuego,
+  ] = useState('');
 
 
   // ==========================================================
-  // CARGAR PERFIL CUANDO ENTRAMOS A ESTA PANTALLA
+  // RADIO DE BÚSQUEDA
   // ==========================================================
   //
-  // useFocusEffect permite que el perfil se vuelva a consultar
-  // cada vez que regresamos a esta pestaña.
+  // Por defecto:
   //
-  // Esto es útil porque si modificamos deportes en deportes.tsx
-  // y después volvemos al perfil, veremos los cambios nuevos.
+  // 25 kilómetros.
+  //
+  // ==========================================================
+
+  const [
+    radioBusqueda,
+    setRadioBusqueda,
+  ] = useState(25);
+
+
+  // ==========================================================
+  // RECARGAR AL ENTRAR
   // ==========================================================
 
   useFocusEffect(
@@ -199,7 +250,7 @@ export default function PerfilScreen() {
 
 
   // ==========================================================
-  // CARGAR DATOS DESDE SUPABASE
+  // CARGAR PERFIL
   // ==========================================================
 
   async function cargarPerfil() {
@@ -208,13 +259,17 @@ export default function PerfilScreen() {
 
 
       // ------------------------------------------------------
-      // 1. OBTENER USUARIO AUTENTICADO
+      // 1. USUARIO AUTENTICADO
       // ------------------------------------------------------
 
       const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+        data: {
+          user,
+        },
+        error:
+          userError,
+      } =
+        await supabase.auth.getUser();
 
 
       if (userError) {
@@ -222,41 +277,38 @@ export default function PerfilScreen() {
       }
 
 
-      // Si no existe sesión, enviamos al login.
       if (!user) {
         Alert.alert(
           'Sesión no encontrada',
           'Debes iniciar sesión nuevamente.'
         );
 
-        router.replace('/login');
+
+        router.replace(
+          '/login'
+        );
+
 
         return;
       }
 
 
-      // El correo está almacenado en Supabase Auth.
-      setEmail(user.email ?? '');
+      // Correo desde Auth.
+
+      setEmail(
+        user.email ??
+          ''
+      );
 
 
       // ------------------------------------------------------
-      // 2. BUSCAR PERFIL DEL USUARIO
-      // ------------------------------------------------------
-      //
-      // La relación se realiza mediante:
-      //
-      // auth.users.id
-      //        =
-      // profiles.id
-      //
-      // Ahora también consultamos:
-      // sports
-      // skill_level
+      // 2. PERFIL
       // ------------------------------------------------------
 
       const {
         data: perfil,
-        error: perfilError,
+        error:
+          perfilError,
       } = await supabase
         .from('profiles')
         .select(
@@ -268,10 +320,14 @@ export default function PerfilScreen() {
           favorite_team,
           instagram,
           sports,
-          skill_level
+          skill_level,
+          search_radius_km
           `
         )
-        .eq('id', user.id)
+        .eq(
+          'id',
+          user.id
+        )
         .maybeSingle();
 
 
@@ -281,90 +337,118 @@ export default function PerfilScreen() {
 
 
       // ------------------------------------------------------
-      // 3. SI EXISTE PERFIL, CARGAR LOS DATOS
+      // 3. PERFIL EXISTENTE
       // ------------------------------------------------------
 
       if (perfil) {
-        // Nombre.
         setNombre(
           perfil.full_name ??
-            user.user_metadata?.full_name ??
+            user.user_metadata
+              ?.full_name ??
             ''
         );
 
 
-        // Edad.
         setEdad(
           perfil.age !== null &&
           perfil.age !== undefined
-            ? String(perfil.age)
+            ? String(
+                perfil.age
+              )
             : ''
         );
 
 
-        // Información personal.
         setBio(
-          perfil.bio ?? ''
+          perfil.bio ??
+            ''
         );
+
 
         setEquipo(
-          perfil.favorite_team ?? ''
+          perfil.favorite_team ??
+            ''
         );
+
 
         setInstagram(
-          perfil.instagram ?? ''
+          perfil.instagram ??
+            ''
         );
 
 
-        // ----------------------------------------------------
-        // DEPORTES REALES DESDE SUPABASE
-        // ----------------------------------------------------
-
         setDeportes(
-          Array.isArray(perfil.sports)
+          Array.isArray(
+            perfil.sports
+          )
             ? perfil.sports
             : []
         );
 
 
-        // ----------------------------------------------------
-        // NIVEL REAL DESDE SUPABASE
-        // ----------------------------------------------------
-
         setNivelJuego(
-          perfil.skill_level ?? ''
+          perfil.skill_level ??
+            ''
+        );
+
+
+        // ----------------------------------------------
+        // RADIO REAL DESDE SUPABASE
+        // ----------------------------------------------
+
+        setRadioBusqueda(
+          typeof perfil.search_radius_km ===
+            'number'
+            ? perfil.search_radius_km
+            : 25
         );
       } else {
         // ----------------------------------------------------
-        // RESPALDO
-        // ----------------------------------------------------
-        // Esto solamente debería ocurrir si existe el usuario
-        // en Auth, pero todavía no existe una fila en profiles.
+        // RESPALDO:
+        // usuario existe en Auth pero no en profiles.
         // ----------------------------------------------------
 
         const nombreInicial =
-          user.user_metadata?.full_name ?? '';
+          user.user_metadata
+            ?.full_name ??
+          '';
 
 
-        setNombre(nombreInicial);
+        setNombre(
+          nombreInicial
+        );
 
 
         const {
-          error: crearError,
+          error:
+            crearError,
         } = await supabase
           .from('profiles')
           .insert({
-            id: user.id,
+            id:
+              user.id,
+
             full_name:
-              nombreInicial || null,
+              nombreInicial ||
+              null,
+
+            search_radius_km:
+              25,
           });
 
 
         if (crearError) {
           throw crearError;
         }
+
+
+        setRadioBusqueda(
+          25
+        );
       }
-    } catch (error: any) {
+    } catch (
+      error: any
+    ) {
       console.log(
         'Error cargando perfil:',
         error
@@ -377,7 +461,9 @@ export default function PerfilScreen() {
           'No se pudo cargar la información del perfil.'
       );
     } finally {
-      setCargandoPerfil(false);
+      setCargandoPerfil(
+        false
+      );
     }
   }
 
@@ -387,7 +473,8 @@ export default function PerfilScreen() {
   // ==========================================================
 
   async function handleGuardar() {
-    // Nombre y edad son obligatorios.
+    // Nombre y edad obligatorios.
+
     if (
       !nombre.trim() ||
       !edad.trim()
@@ -401,14 +488,16 @@ export default function PerfilScreen() {
     }
 
 
-    // Convertimos la edad desde string a número.
     const edadNumero =
-      Number(edad);
+      Number(
+        edad
+      );
 
 
-    // Validación básica de edad.
     if (
-      !Number.isInteger(edadNumero) ||
+      !Number.isInteger(
+        edadNumero
+      ) ||
       edadNumero <= 0 ||
       edadNumero > 120
     ) {
@@ -422,17 +511,19 @@ export default function PerfilScreen() {
 
 
     try {
-      setGuardando(true);
+      setGuardando(
+        true
+      );
 
-
-      // ------------------------------------------------------
-      // OBTENER USUARIO ACTUAL
-      // ------------------------------------------------------
 
       const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+        data: {
+          user,
+        },
+        error:
+          userError,
+      } =
+        await supabase.auth.getUser();
 
 
       if (userError) {
@@ -446,29 +537,25 @@ export default function PerfilScreen() {
           'Debes iniciar sesión nuevamente.'
         );
 
-        router.replace('/login');
+
+        router.replace(
+          '/login'
+        );
+
 
         return;
       }
 
 
-      // ------------------------------------------------------
-      // ACTUALIZAR PERFIL
-      // ------------------------------------------------------
-      //
-      // Importante:
-      // Aquí NO modificamos sports ni skill_level.
-      //
-      // Esos valores se administran desde deportes.tsx.
-      // ------------------------------------------------------
-
       const {
-        error: perfilError,
+        error:
+          perfilError,
       } = await supabase
         .from('profiles')
         .upsert(
           {
-            id: user.id,
+            id:
+              user.id,
 
             full_name:
               nombre.trim(),
@@ -477,19 +564,23 @@ export default function PerfilScreen() {
               edadNumero,
 
             bio:
-              bio.trim() || null,
+              bio.trim() ||
+              null,
 
             favorite_team:
-              equipo.trim() || null,
+              equipo.trim() ||
+              null,
 
             instagram:
-              instagram.trim() || null,
+              instagram.trim() ||
+              null,
 
             updated_at:
               new Date().toISOString(),
           },
           {
-            onConflict: 'id',
+            onConflict:
+              'id',
           }
         );
 
@@ -499,15 +590,18 @@ export default function PerfilScreen() {
       }
 
 
-      // Volvemos al modo vista.
-      setModoEdicion(false);
+      setModoEdicion(
+        false
+      );
 
 
       Alert.alert(
         '¡Perfil actualizado!',
         'Tus cambios se guardaron correctamente en FitMatch.'
       );
-    } catch (error: any) {
+    } catch (
+      error: any
+    ) {
       console.log(
         'Error guardando perfil:',
         error
@@ -520,7 +614,119 @@ export default function PerfilScreen() {
           'No se pudieron guardar los cambios.'
       );
     } finally {
-      setGuardando(false);
+      setGuardando(
+        false
+      );
+    }
+  }
+
+
+  // ==========================================================
+  // CAMBIAR RADIO DE BÚSQUEDA
+  // ==========================================================
+
+  async function handleCambiarRadio(
+    nuevoRadio: number
+  ) {
+    // Si seleccionó el mismo valor,
+    // no hacemos otra consulta.
+
+    if (
+      nuevoRadio ===
+      radioBusqueda
+    ) {
+      return;
+    }
+
+
+    try {
+      setGuardandoRadio(
+        true
+      );
+
+
+      const {
+        data: {
+          user,
+        },
+        error:
+          userError,
+      } =
+        await supabase.auth.getUser();
+
+
+      if (userError) {
+        throw userError;
+      }
+
+
+      if (!user) {
+        Alert.alert(
+          'Sesión no encontrada',
+          'Debes iniciar sesión nuevamente.'
+        );
+
+
+        router.replace(
+          '/login'
+        );
+
+
+        return;
+      }
+
+
+      // ------------------------------------------------------
+      // GUARDAR EN PROFILES
+      // ------------------------------------------------------
+
+      const {
+        error:
+          radioError,
+      } = await supabase
+        .from('profiles')
+        .update({
+          search_radius_km:
+            nuevoRadio,
+
+          updated_at:
+            new Date().toISOString(),
+        })
+        .eq(
+          'id',
+          user.id
+        );
+
+
+      if (radioError) {
+        throw radioError;
+      }
+
+
+      // Actualizamos la interfaz solo cuando
+      // Supabase confirma el cambio.
+
+      setRadioBusqueda(
+        nuevoRadio
+      );
+    } catch (
+      error: any
+    ) {
+      console.log(
+        'Error guardando radio:',
+        error
+      );
+
+
+      Alert.alert(
+        'Error',
+        error?.message ??
+          'No se pudo guardar el radio de búsqueda.'
+      );
+    } finally {
+      setGuardandoRadio(
+        false
+      );
     }
   }
 
@@ -532,7 +738,8 @@ export default function PerfilScreen() {
   async function handleLogout() {
     const {
       error,
-    } = await supabase.auth.signOut();
+    } =
+      await supabase.auth.signOut();
 
 
     if (error) {
@@ -545,8 +752,9 @@ export default function PerfilScreen() {
     }
 
 
-    // Volver al login.
-    router.replace('/login');
+    router.replace(
+      '/login'
+    );
   }
 
 
@@ -558,13 +766,15 @@ export default function PerfilScreen() {
     value: boolean
   ) {
     await setTheme(
-      value ? 'dark' : 'light'
+      value
+        ? 'dark'
+        : 'light'
     );
   }
 
 
   // ==========================================================
-  // PANTALLA DE CARGA
+  // CARGANDO
   // ==========================================================
 
   if (cargandoPerfil) {
@@ -585,8 +795,11 @@ export default function PerfilScreen() {
         >
           <ActivityIndicator
             size="large"
-            color={colors.primary}
+            color={
+              colors.primary
+            }
           />
+
 
           <Text
             style={[
@@ -606,7 +819,7 @@ export default function PerfilScreen() {
 
 
   // ==========================================================
-  // INTERFAZ PRINCIPAL
+  // INTERFAZ
   // ==========================================================
 
   return (
@@ -628,12 +841,14 @@ export default function PerfilScreen() {
         }
       >
         {/* ==================================================
-            HEADER / INFORMACIÓN PRINCIPAL
+            HEADER
         ================================================== */}
 
-        <View style={styles.header}>
-          {/* Avatar */}
-
+        <View
+          style={
+            styles.header
+          }
+        >
           <View
             style={[
               styles.avatarContainer,
@@ -656,13 +871,12 @@ export default function PerfilScreen() {
           </View>
 
 
-          {/* Nombre + edad */}
-
           <Text
             style={[
               styles.userName,
               {
-                color: colors.text,
+                color:
+                  colors.text,
               },
             ]}
           >
@@ -674,8 +888,6 @@ export default function PerfilScreen() {
               : ''}
           </Text>
 
-
-          {/* Correo */}
 
           <Text
             style={[
@@ -689,8 +901,6 @@ export default function PerfilScreen() {
             {email}
           </Text>
 
-
-          {/* Biografía */}
 
           <Text
             style={[
@@ -706,8 +916,6 @@ export default function PerfilScreen() {
               : 'Aún no has agregado una biografía.'}
           </Text>
 
-
-          {/* Botón editar perfil */}
 
           <TouchableOpacity
             style={[
@@ -744,7 +952,7 @@ export default function PerfilScreen() {
 
 
         {/* ==================================================
-            MODO EDICIÓN
+            EDICIÓN
         ================================================== */}
 
         {modoEdicion ? (
@@ -764,7 +972,8 @@ export default function PerfilScreen() {
               style={[
                 styles.sectionTitle,
                 {
-                  color: colors.text,
+                  color:
+                    colors.text,
                 },
               ]}
             >
@@ -772,7 +981,7 @@ export default function PerfilScreen() {
             </Text>
 
 
-            {/* Nombre */}
+            {/* NOMBRE */}
 
             <Text
               style={[
@@ -786,6 +995,7 @@ export default function PerfilScreen() {
               Nombre Completo
             </Text>
 
+
             <TextInput
               style={[
                 styles.input,
@@ -800,7 +1010,9 @@ export default function PerfilScreen() {
                     colors.text,
                 },
               ]}
-              value={nombre}
+              value={
+                nombre
+              }
               onChangeText={
                 setNombre
               }
@@ -811,7 +1023,7 @@ export default function PerfilScreen() {
             />
 
 
-            {/* Edad */}
+            {/* EDAD */}
 
             <Text
               style={[
@@ -825,6 +1037,7 @@ export default function PerfilScreen() {
               Edad
             </Text>
 
+
             <TextInput
               style={[
                 styles.input,
@@ -839,8 +1052,12 @@ export default function PerfilScreen() {
                     colors.text,
                 },
               ]}
-              value={edad}
-              onChangeText={setEdad}
+              value={
+                edad
+              }
+              onChangeText={
+                setEdad
+              }
               keyboardType="numeric"
               placeholder="Tu edad"
               placeholderTextColor={
@@ -849,7 +1066,7 @@ export default function PerfilScreen() {
             />
 
 
-            {/* Biografía */}
+            {/* BIO */}
 
             <Text
               style={[
@@ -862,6 +1079,7 @@ export default function PerfilScreen() {
             >
               Biografía / Descripción
             </Text>
+
 
             <TextInput
               style={[
@@ -878,8 +1096,12 @@ export default function PerfilScreen() {
                     colors.text,
                 },
               ]}
-              value={bio}
-              onChangeText={setBio}
+              value={
+                bio
+              }
+              onChangeText={
+                setBio
+              }
               multiline
               placeholder="Cuéntanos algo sobre ti..."
               placeholderTextColor={
@@ -888,7 +1110,7 @@ export default function PerfilScreen() {
             />
 
 
-            {/* Equipo favorito */}
+            {/* EQUIPO */}
 
             <Text
               style={[
@@ -902,6 +1124,7 @@ export default function PerfilScreen() {
               Equipo Favorito / Hincha de
             </Text>
 
+
             <TextInput
               style={[
                 styles.input,
@@ -916,7 +1139,9 @@ export default function PerfilScreen() {
                     colors.text,
                 },
               ]}
-              value={equipo}
+              value={
+                equipo
+              }
               onChangeText={
                 setEquipo
               }
@@ -927,7 +1152,7 @@ export default function PerfilScreen() {
             />
 
 
-            {/* Instagram */}
+            {/* INSTAGRAM */}
 
             <Text
               style={[
@@ -941,6 +1166,7 @@ export default function PerfilScreen() {
               Instagram / Red Social
             </Text>
 
+
             <TextInput
               style={[
                 styles.input,
@@ -955,7 +1181,9 @@ export default function PerfilScreen() {
                     colors.text,
                 },
               ]}
-              value={instagram}
+              value={
+                instagram
+              }
               onChangeText={
                 setInstagram
               }
@@ -967,7 +1195,7 @@ export default function PerfilScreen() {
             />
 
 
-            {/* Guardar */}
+            {/* GUARDAR */}
 
             <TouchableOpacity
               style={[
@@ -1005,18 +1233,18 @@ export default function PerfilScreen() {
             </TouchableOpacity>
           </View>
         ) : (
-          /* ================================================
-             MODO VISTA
-          ================================================ */
+          // ==================================================
+          // MODO VISTA
+          // ==================================================
 
           <View
             style={
               styles.cardsContainer
             }
           >
-            {/* ==============================================
+            {/* ================================================
                 MIS DEPORTES
-            ============================================== */}
+            ================================================ */}
 
             <View
               style={[
@@ -1048,15 +1276,17 @@ export default function PerfilScreen() {
                   styles.chipContainer
                 }
               >
-                {deportes.length > 0 ? (
+                {deportes.length >
+                0 ? (
                   deportes.map(
-                    (deporteId) => {
-                      // Buscamos la información visual
-                      // correspondiente al ID guardado.
-
+                    (
+                      deporteId
+                    ) => {
                       const deporte =
                         DEPORTES_DISPONIBLES.find(
-                          (item) =>
+                          (
+                            item
+                          ) =>
                             item.id ===
                             deporteId
                         );
@@ -1112,9 +1342,9 @@ export default function PerfilScreen() {
             </View>
 
 
-            {/* ==============================================
-                NIVEL DE JUEGO
-            ============================================== */}
+            {/* ================================================
+                NIVEL
+            ================================================ */}
 
             <View
               style={[
@@ -1140,6 +1370,7 @@ export default function PerfilScreen() {
                 🎯 Nivel de Juego
               </Text>
 
+
               <Text
                 style={[
                   styles.infoText,
@@ -1153,8 +1384,6 @@ export default function PerfilScreen() {
                   'No especificado'}
               </Text>
 
-
-              {/* Volver a deportes.tsx */}
 
               <TouchableOpacity
                 style={[
@@ -1185,9 +1414,9 @@ export default function PerfilScreen() {
             </View>
 
 
-            {/* ==============================================
-                EQUIPO FAVORITO
-            ============================================== */}
+            {/* ================================================
+                EQUIPO
+            ================================================ */}
 
             <View
               style={[
@@ -1213,6 +1442,7 @@ export default function PerfilScreen() {
                 ⚽ Equipo Favorito
               </Text>
 
+
               <Text
                 style={[
                   styles.infoText,
@@ -1228,9 +1458,9 @@ export default function PerfilScreen() {
             </View>
 
 
-            {/* ==============================================
-                REDES SOCIALES
-            ============================================== */}
+            {/* ================================================
+                RED SOCIAL
+            ================================================ */}
 
             <View
               style={[
@@ -1256,6 +1486,7 @@ export default function PerfilScreen() {
                 📲 Redes Sociales
               </Text>
 
+
               <Text
                 style={[
                   styles.infoText,
@@ -1266,15 +1497,16 @@ export default function PerfilScreen() {
                 ]}
               >
                 Instagram:{' '}
+
                 {instagram ||
                   'No configurado'}
               </Text>
             </View>
 
 
-            {/* ==============================================
+            {/* ================================================
                 CUENTA
-            ============================================== */}
+            ================================================ */}
 
             <View
               style={[
@@ -1300,6 +1532,7 @@ export default function PerfilScreen() {
                 👤 Cuenta
               </Text>
 
+
               <Text
                 style={[
                   styles.infoText,
@@ -1315,9 +1548,9 @@ export default function PerfilScreen() {
             </View>
 
 
-            {/* ==============================================
+            {/* ================================================
                 CONFIGURACIÓN
-            ============================================== */}
+            ================================================ */}
 
             <View
               style={[
@@ -1344,6 +1577,154 @@ export default function PerfilScreen() {
               </Text>
 
 
+              {/* ==============================================
+                  RADIO DE BÚSQUEDA
+              ============================================== */}
+
+              <View
+                style={
+                  styles.radiusSection
+                }
+              >
+                <Text
+                  style={[
+                    styles.settingTitle,
+                    {
+                      color:
+                        colors.text,
+                    },
+                  ]}
+                >
+                  📍 Radio de búsqueda
+                </Text>
+
+
+                <Text
+                  style={[
+                    styles.settingDescription,
+                    {
+                      color:
+                        colors.secondaryText,
+                    },
+                  ]}
+                >
+                  Define a qué distancia quieres encontrar deportistas.
+                </Text>
+
+
+                <View
+                  style={
+                    styles.radiusOptions
+                  }
+                >
+                  {RADIOS_BUSQUEDA.map(
+                    (
+                      opcion
+                    ) => {
+                      const seleccionado =
+                        radioBusqueda ===
+                        opcion.value;
+
+
+                      return (
+                        <TouchableOpacity
+                          key={
+                            opcion.value
+                          }
+                          style={[
+                            styles.radiusButton,
+                            {
+                              backgroundColor:
+                                seleccionado
+                                  ? colors.primarySoft
+                                  : colors.background,
+
+                              borderColor:
+                                seleccionado
+                                  ? colors.primary
+                                  : colors.border,
+
+                              opacity:
+                                guardandoRadio
+                                  ? 0.65
+                                  : 1,
+                            },
+                          ]}
+                          disabled={
+                            guardandoRadio
+                          }
+                          onPress={() =>
+                            handleCambiarRadio(
+                              opcion.value
+                            )
+                          }
+                        >
+                          <Text
+                            style={[
+                              styles.radiusButtonText,
+                              {
+                                color:
+                                  seleccionado
+                                    ? colors.primary
+                                    : colors.text,
+                              },
+                            ]}
+                          >
+                            {opcion.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    }
+                  )}
+                </View>
+
+
+                {guardandoRadio && (
+                  <View
+                    style={
+                      styles.savingRadius
+                    }
+                  >
+                    <ActivityIndicator
+                      size="small"
+                      color={
+                        colors.primary
+                      }
+                    />
+
+                    <Text
+                      style={[
+                        styles.savingRadiusText,
+                        {
+                          color:
+                            colors.secondaryText,
+                        },
+                      ]}
+                    >
+                      Guardando radio...
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+
+              {/* DIVISOR */}
+
+              <View
+                style={[
+                  styles.settingDivider,
+                  {
+                    backgroundColor:
+                      colors.border,
+                  },
+                ]}
+              />
+
+
+              {/* ==============================================
+                  MODO OSCURO
+              ============================================== */}
+
               <View
                 style={
                   styles.settingRow
@@ -1366,6 +1747,7 @@ export default function PerfilScreen() {
                     🌙 Modo oscuro
                   </Text>
 
+
                   <Text
                     style={[
                       styles.settingDescription,
@@ -1381,7 +1763,9 @@ export default function PerfilScreen() {
 
 
                 <Switch
-                  value={isDark}
+                  value={
+                    isDark
+                  }
                   onValueChange={
                     handleCambiarTema
                   }
@@ -1398,9 +1782,9 @@ export default function PerfilScreen() {
             </View>
 
 
-            {/* ==============================================
-                CERRAR SESIÓN
-            ============================================== */}
+            {/* ================================================
+                LOGOUT
+            ================================================ */}
 
             <TouchableOpacity
               style={[
@@ -1438,263 +1822,422 @@ export default function PerfilScreen() {
 // ESTILOS
 // ============================================================
 
-const styles = StyleSheet.create({
-  // Contenedor principal.
-  safeArea: {
-    flex: 1,
-  },
+const styles =
+  StyleSheet.create({
+    safeArea: {
+      flex: 1,
+    },
 
 
-  // Contenido desplazable.
-  container: {
-    padding: 20,
-  },
+    container: {
+      padding: 20,
+    },
 
 
-  // Pantalla de carga.
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 12,
-  },
+    // ========================================================
+    // CARGA
+    // ========================================================
 
+    loadingContainer: {
+      flex: 1,
 
-  loadingText: {
-    fontSize: 14,
-  },
+      justifyContent:
+        'center',
 
+      alignItems:
+        'center',
 
-  // ==========================================================
-  // HEADER
-  // ==========================================================
+      gap: 12,
+    },
 
-  header: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
 
+    loadingText: {
+      fontSize: 14,
+    },
 
-  avatarContainer: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    borderWidth: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
 
+    // ========================================================
+    // HEADER
+    // ========================================================
 
-  avatarEmoji: {
-    fontSize: 50,
-  },
+    header: {
+      alignItems:
+        'center',
 
+      marginBottom: 20,
+    },
 
-  userName: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
 
+    avatarContainer: {
+      width: 90,
 
-  userEmail: {
-    fontSize: 12,
-    marginTop: 4,
-  },
+      height: 90,
 
+      borderRadius: 45,
 
-  userBio: {
-    fontSize: 13,
-    textAlign: 'center',
-    marginTop: 8,
-    paddingHorizontal: 20,
-    fontStyle: 'italic',
-  },
+      borderWidth: 2,
 
+      justifyContent:
+        'center',
 
-  editToggleBtn: {
-    marginTop: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
+      alignItems:
+        'center',
 
+      marginBottom: 12,
+    },
 
-  editToggleText: {
-    fontWeight: '600',
-    fontSize: 13,
-  },
 
+    avatarEmoji: {
+      fontSize: 50,
+    },
 
-  // ==========================================================
-  // TARJETAS
-  // ==========================================================
 
-  cardsContainer: {
-    gap: 16,
-  },
+    userName: {
+      fontSize: 22,
 
+      fontWeight:
+        'bold',
 
-  infoCard: {
-    padding: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    gap: 8,
-  },
+      textAlign:
+        'center',
+    },
 
 
-  cardTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
+    userEmail: {
+      fontSize: 12,
 
+      marginTop: 4,
+    },
 
-  infoText: {
-    fontSize: 14,
-  },
 
+    userBio: {
+      fontSize: 13,
 
-  // ==========================================================
-  // DEPORTES
-  // ==========================================================
+      textAlign:
+        'center',
 
-  chipContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
+      marginTop: 8,
 
+      paddingHorizontal: 20,
 
-  sportChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
+      fontStyle:
+        'italic',
+    },
 
 
-  sportChipText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
+    editToggleBtn: {
+      marginTop: 12,
 
+      paddingHorizontal: 16,
 
-  // Botón para volver a deportes.tsx.
-  editSportsBtn: {
-    marginTop: 6,
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
+      paddingVertical: 8,
 
+      borderRadius: 20,
 
-  editSportsText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
+      borderWidth: 1,
+    },
 
 
-  // ==========================================================
-  // FORMULARIO DE EDICIÓN
-  // ==========================================================
+    editToggleText: {
+      fontWeight:
+        '600',
 
-  formCard: {
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    gap: 12,
-  },
+      fontSize: 13,
+    },
 
 
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
+    // ========================================================
+    // TARJETAS
+    // ========================================================
 
+    cardsContainer: {
+      gap: 16,
+    },
 
-  label: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
 
+    infoCard: {
+      padding: 16,
 
-  input: {
-    borderWidth: 1,
-    padding: 10,
-    borderRadius: 8,
-    fontSize: 14,
-  },
+      borderRadius: 14,
 
+      borderWidth: 1,
 
-  bioInput: {
-    height: 80,
-    textAlignVertical: 'top',
-  },
+      gap: 8,
+    },
 
 
-  saveBtn: {
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 8,
-  },
+    cardTitle: {
+      fontSize: 14,
 
+      fontWeight:
+        'bold',
+    },
 
-  saveBtnText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
 
+    infoText: {
+      fontSize: 14,
+    },
 
-  // ==========================================================
-  // CONFIGURACIÓN
-  // ==========================================================
 
-  settingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent:
-      'space-between',
-    gap: 12,
-  },
+    // ========================================================
+    // DEPORTES
+    // ========================================================
 
+    chipContainer: {
+      flexDirection:
+        'row',
 
-  settingTextContainer: {
-    flex: 1,
-  },
+      flexWrap:
+        'wrap',
 
+      gap: 8,
+    },
 
-  settingTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
 
+    sportChip: {
+      paddingHorizontal: 12,
 
-  settingDescription: {
-    fontSize: 12,
-    marginTop: 2,
-  },
+      paddingVertical: 6,
 
+      borderRadius: 16,
 
-  // ==========================================================
-  // CERRAR SESIÓN
-  // ==========================================================
+      borderWidth: 1,
+    },
 
-  logoutBtn: {
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 10,
-  },
 
+    sportChipText: {
+      fontSize: 12,
 
-  logoutText: {
-    fontWeight: 'bold',
-  },
-});
+      fontWeight:
+        'bold',
+    },
+
+
+    editSportsBtn: {
+      marginTop: 6,
+
+      paddingVertical: 9,
+
+      paddingHorizontal: 12,
+
+      borderRadius: 10,
+
+      borderWidth: 1,
+
+      alignItems:
+        'center',
+    },
+
+
+    editSportsText: {
+      fontSize: 13,
+
+      fontWeight:
+        '600',
+    },
+
+
+    // ========================================================
+    // FORMULARIO
+    // ========================================================
+
+    formCard: {
+      padding: 16,
+
+      borderRadius: 16,
+
+      borderWidth: 1,
+
+      gap: 12,
+    },
+
+
+    sectionTitle: {
+      fontSize: 16,
+
+      fontWeight:
+        'bold',
+
+      marginBottom: 4,
+    },
+
+
+    label: {
+      fontSize: 12,
+
+      fontWeight:
+        '600',
+    },
+
+
+    input: {
+      borderWidth: 1,
+
+      padding: 10,
+
+      borderRadius: 8,
+
+      fontSize: 14,
+    },
+
+
+    bioInput: {
+      height: 80,
+
+      textAlignVertical:
+        'top',
+    },
+
+
+    saveBtn: {
+      paddingVertical: 12,
+
+      borderRadius: 10,
+
+      alignItems:
+        'center',
+
+      marginTop: 8,
+    },
+
+
+    saveBtnText: {
+      color:
+        '#FFFFFF',
+
+      fontWeight:
+        'bold',
+
+      fontSize: 14,
+    },
+
+
+    // ========================================================
+    // CONFIGURACIÓN
+    // ========================================================
+
+    settingRow: {
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'space-between',
+
+      gap: 12,
+    },
+
+
+    settingTextContainer: {
+      flex: 1,
+    },
+
+
+    settingTitle: {
+      fontSize: 14,
+
+      fontWeight:
+        '600',
+    },
+
+
+    settingDescription: {
+      fontSize: 12,
+
+      marginTop: 2,
+
+      lineHeight: 18,
+    },
+
+
+    settingDivider: {
+      height: 1,
+
+      width: '100%',
+
+      marginVertical: 8,
+    },
+
+
+    // ========================================================
+    // RADIO DE BÚSQUEDA
+    // ========================================================
+
+    radiusSection: {
+      width: '100%',
+    },
+
+
+    radiusOptions: {
+      flexDirection:
+        'row',
+
+      flexWrap:
+        'wrap',
+
+      gap: 8,
+
+      marginTop: 12,
+    },
+
+
+    radiusButton: {
+      paddingHorizontal: 14,
+
+      paddingVertical: 9,
+
+      borderRadius: 18,
+
+      borderWidth: 1,
+    },
+
+
+    radiusButtonText: {
+      fontSize: 12,
+
+      fontWeight:
+        '700',
+    },
+
+
+    savingRadius: {
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      gap: 7,
+
+      marginTop: 10,
+    },
+
+
+    savingRadiusText: {
+      fontSize: 11,
+    },
+
+
+    // ========================================================
+    // LOGOUT
+    // ========================================================
+
+    logoutBtn: {
+      padding: 16,
+
+      borderRadius: 12,
+
+      alignItems:
+        'center',
+
+      marginTop: 10,
+    },
+
+
+    logoutText: {
+      fontWeight:
+        'bold',
+    },
+  });
