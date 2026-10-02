@@ -1,16 +1,19 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+
+import { supabase } from '../lib/supabase';
 import { useTheme } from '../lib/ThemeContext';
 
 const DEPORTES_DISPONIBLES = [
@@ -31,6 +34,7 @@ const NIVELES = [
 ];
 
 export default function DeportesScreen() {
+  const router = useRouter();
   const { isDark, colors } = useTheme();
 
   const [deportesSeleccionados, setDeportesSeleccionados] =
@@ -39,24 +43,89 @@ export default function DeportesScreen() {
   const [nivelSeleccionado, setNivelSeleccionado] =
     useState<string>('Intermedio');
 
-  const router = useRouter();
+  const [cargando, setCargando] = useState(true);
+  const [guardando, setGuardando] = useState(false);
 
-  function toggleDeporte(id: string) {
-    if (deportesSeleccionados.includes(id)) {
-      setDeportesSeleccionados(
-        deportesSeleccionados.filter(
-          (item) => item !== id
-        )
+  useEffect(() => {
+    cargarPreferencias();
+  }, []);
+
+  async function cargarPreferencias() {
+    try {
+      setCargando(true);
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        throw userError;
+      }
+
+      if (!user) {
+        Alert.alert(
+          'Sesión no encontrada',
+          'Debes iniciar sesión nuevamente.'
+        );
+
+        router.replace('/login');
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('sports, skill_level')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (error) {
+        throw error;
+      }
+
+      if (data) {
+        if (Array.isArray(data.sports)) {
+          setDeportesSeleccionados(data.sports);
+        }
+
+        if (data.skill_level) {
+          setNivelSeleccionado(data.skill_level);
+        }
+      }
+    } catch (error: any) {
+      console.log(
+        'Error cargando deportes:',
+        error
       );
-    } else {
-      setDeportesSeleccionados([
-        ...deportesSeleccionados,
-        id,
-      ]);
+
+      Alert.alert(
+        'Error',
+        error?.message ??
+          'No se pudieron cargar tus preferencias deportivas.'
+      );
+    } finally {
+      setCargando(false);
     }
   }
 
-  function handleContinuar() {
+  function toggleDeporte(id: string) {
+    setDeportesSeleccionados(
+      (deportesActuales) => {
+        if (deportesActuales.includes(id)) {
+          return deportesActuales.filter(
+            (item) => item !== id
+          );
+        }
+
+        return [
+          ...deportesActuales,
+          id,
+        ];
+      }
+    );
+  }
+
+  async function handleContinuar() {
     if (deportesSeleccionados.length === 0) {
       Alert.alert(
         'Selecciona al menos un deporte',
@@ -66,8 +135,92 @@ export default function DeportesScreen() {
       return;
     }
 
-    // Navegamos al Dashboard Principal (Tabs)
-    router.replace('/(tabs)');
+    try {
+      setGuardando(true);
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        throw userError;
+      }
+
+      if (!user) {
+        Alert.alert(
+          'Sesión no encontrada',
+          'Debes iniciar sesión nuevamente.'
+        );
+
+        router.replace('/login');
+        return;
+      }
+
+      const { error } = await supabase
+        .from('profiles')
+        .upsert(
+          {
+            id: user.id,
+            sports: deportesSeleccionados,
+            skill_level: nivelSeleccionado,
+            updated_at: new Date().toISOString(),
+          },
+          {
+            onConflict: 'id',
+          }
+        );
+
+      if (error) {
+        throw error;
+      }
+
+      router.replace('/(tabs)');
+    } catch (error: any) {
+      console.log(
+        'Error guardando deportes:',
+        error
+      );
+
+      Alert.alert(
+        'Error al guardar',
+        error?.message ??
+          'No se pudieron guardar tus deportes y nivel.'
+      );
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  if (cargando) {
+    return (
+      <SafeAreaView
+        style={[
+          styles.safeArea,
+          {
+            backgroundColor: colors.background,
+          },
+        ]}
+      >
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator
+            size="large"
+            color={colors.primary}
+          />
+
+          <Text
+            style={[
+              styles.loadingText,
+              {
+                color: colors.secondaryText,
+              },
+            ]}
+          >
+            Cargando preferencias...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
   }
 
   return (
@@ -229,13 +382,19 @@ export default function DeportesScreen() {
             styles.primaryButton,
             {
               backgroundColor: colors.primary,
+              opacity: guardando ? 0.7 : 1,
             },
           ]}
           onPress={handleContinuar}
+          disabled={guardando}
         >
-          <Text style={styles.primaryButtonText}>
-            Continuar
-          </Text>
+          {guardando ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.primaryButtonText}>
+              Continuar
+            </Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -249,6 +408,17 @@ const styles = StyleSheet.create({
 
   container: {
     padding: 24,
+  },
+
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+
+  loadingText: {
+    fontSize: 14,
   },
 
   title: {

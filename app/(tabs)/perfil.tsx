@@ -1,10 +1,26 @@
-import React, { useEffect, useState } from 'react';
+// ============================================================
+// FITMATCH - PANTALLA DE PERFIL
+// ============================================================
+// Esta pantalla:
+// - Obtiene al usuario autenticado desde Supabase Auth.
+// - Carga sus datos desde public.profiles.
+// - Permite editar información personal.
+// - Muestra los deportes guardados en Supabase.
+// - Muestra el nivel de juego guardado en Supabase.
+// - Permite volver a editar preferencias deportivas.
+// - Mantiene el modo claro / oscuro.
+// - Permite cerrar sesión.
+// ============================================================
+
+import React, {
+  useCallback,
+  useState,
+} from 'react';
 
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
   TextInput,
@@ -13,53 +29,200 @@ import {
   ActivityIndicator,
 } from 'react-native';
 
+// SafeAreaView recomendado actualmente para Expo / React Native.
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+// Expo Router.
+import {
+  useFocusEffect,
+  useRouter,
+} from 'expo-router';
+
+// Cliente de Supabase.
 import { supabase } from '../../lib/supabase';
+
+// Sistema global de tema de FitMatch.
 import { useTheme } from '../../lib/ThemeContext';
-import { useRouter } from 'expo-router';
+
+
+// ============================================================
+// CATÁLOGO DE DEPORTES
+// ============================================================
+// Los IDs coinciden con los valores que guardamos en
+// profiles.sports.
+//
+// Ejemplo guardado en Supabase:
+// {futbol,padel,running}
+//
+// Gracias a este arreglo podemos transformar:
+// "futbol" -> "⚽ Fútbol"
+// ============================================================
+
+const DEPORTES_DISPONIBLES = [
+  {
+    id: 'futbol',
+    nombre: 'Fútbol',
+    icono: '⚽',
+  },
+  {
+    id: 'padel',
+    nombre: 'Pádel',
+    icono: '🎾',
+  },
+  {
+    id: 'tenis',
+    nombre: 'Tenis',
+    icono: '🎾',
+  },
+  {
+    id: 'basquet',
+    nombre: 'Básquetbol',
+    icono: '🏀',
+  },
+  {
+    id: 'running',
+    nombre: 'Running',
+    icono: '🏃',
+  },
+  {
+    id: 'gym',
+    nombre: 'Gimnasio',
+    icono: '🏋️',
+  },
+  {
+    id: 'volley',
+    nombre: 'Vóleibol',
+    icono: '🏐',
+  },
+  {
+    id: 'ciclismo',
+    nombre: 'Ciclismo',
+    icono: '🚴',
+  },
+];
+
+
+// ============================================================
+// COMPONENTE PRINCIPAL
+// ============================================================
 
 export default function PerfilScreen() {
+  // Navegación.
   const router = useRouter();
 
-  const { isDark, colors, setTheme } = useTheme();
+  // Tema global.
+  const {
+    isDark,
+    colors,
+    setTheme,
+  } = useTheme();
 
-  const [modoEdicion, setModoEdicion] = useState(false);
-  const [cargandoPerfil, setCargandoPerfil] = useState(true);
-  const [guardando, setGuardando] = useState(false);
 
-  // Datos reales del perfil
-  const [nombre, setNombre] = useState('');
-  const [edad, setEdad] = useState('');
-  const [bio, setBio] = useState('');
-  const [equipo, setEquipo] = useState('');
-  const [instagram, setInstagram] = useState('');
-  const [email, setEmail] = useState('');
+  // ==========================================================
+  // ESTADOS GENERALES DE LA PANTALLA
+  // ==========================================================
 
-  // Por ahora los deportes siguen siendo locales.
-  // Más adelante los conectaremos a Supabase.
-  const [deportes] = useState([
-    '🎾 Pádel',
-    '⚽ Fútbol 7',
-    '🏃 Running',
-  ]);
+  // Indica si estamos viendo o editando el perfil.
+  const [modoEdicion, setModoEdicion] =
+    useState(false);
 
-  useEffect(() => {
-    cargarPerfil();
-  }, []);
+  // Estado utilizado mientras Supabase carga el perfil.
+  const [cargandoPerfil, setCargandoPerfil] =
+    useState(true);
+
+  // Estado utilizado mientras guardamos cambios.
+  const [guardando, setGuardando] =
+    useState(false);
+
+
+  // ==========================================================
+  // DATOS PERSONALES DEL USUARIO
+  // ==========================================================
+
+  const [nombre, setNombre] =
+    useState('');
+
+  const [edad, setEdad] =
+    useState('');
+
+  const [bio, setBio] =
+    useState('');
+
+  const [equipo, setEquipo] =
+    useState('');
+
+  const [instagram, setInstagram] =
+    useState('');
+
+  // El correo viene desde Supabase Auth.
+  const [email, setEmail] =
+    useState('');
+
+
+  // ==========================================================
+  // PREFERENCIAS DEPORTIVAS
+  // ==========================================================
+  // Estos datos YA NO son simulados.
+  //
+  // sports:
+  // ['futbol', 'padel', 'running']
+  //
+  // skill_level:
+  // 'Principiante'
+  // 'Intermedio'
+  // 'Avanzado'
+  // ==========================================================
+
+  const [deportes, setDeportes] =
+    useState<string[]>([]);
+
+  const [nivelJuego, setNivelJuego] =
+    useState('');
+
+
+  // ==========================================================
+  // CARGAR PERFIL CUANDO ENTRAMOS A ESTA PANTALLA
+  // ==========================================================
+  //
+  // useFocusEffect permite que el perfil se vuelva a consultar
+  // cada vez que regresamos a esta pestaña.
+  //
+  // Esto es útil porque si modificamos deportes en deportes.tsx
+  // y después volvemos al perfil, veremos los cambios nuevos.
+  // ==========================================================
+
+  useFocusEffect(
+    useCallback(() => {
+      cargarPerfil();
+    }, [])
+  );
+
+
+  // ==========================================================
+  // CARGAR DATOS DESDE SUPABASE
+  // ==========================================================
 
   async function cargarPerfil() {
     try {
       setCargandoPerfil(true);
 
-      // 1. Obtener usuario autenticado
+
+      // ------------------------------------------------------
+      // 1. OBTENER USUARIO AUTENTICADO
+      // ------------------------------------------------------
+
       const {
         data: { user },
         error: userError,
       } = await supabase.auth.getUser();
 
+
       if (userError) {
         throw userError;
       }
 
+
+      // Si no existe sesión, enviamos al login.
       if (!user) {
         Alert.alert(
           'Sesión no encontrada',
@@ -67,62 +230,146 @@ export default function PerfilScreen() {
         );
 
         router.replace('/login');
+
         return;
       }
 
+
+      // El correo está almacenado en Supabase Auth.
       setEmail(user.email ?? '');
 
-      // 2. Buscar perfil usando el mismo UUID de auth.users
-      const { data: perfil, error: perfilError } = await supabase
+
+      // ------------------------------------------------------
+      // 2. BUSCAR PERFIL DEL USUARIO
+      // ------------------------------------------------------
+      //
+      // La relación se realiza mediante:
+      //
+      // auth.users.id
+      //        =
+      // profiles.id
+      //
+      // Ahora también consultamos:
+      // sports
+      // skill_level
+      // ------------------------------------------------------
+
+      const {
+        data: perfil,
+        error: perfilError,
+      } = await supabase
         .from('profiles')
         .select(
-          'id, full_name, age, bio, favorite_team, instagram'
+          `
+          id,
+          full_name,
+          age,
+          bio,
+          favorite_team,
+          instagram,
+          sports,
+          skill_level
+          `
         )
         .eq('id', user.id)
         .maybeSingle();
+
 
       if (perfilError) {
         throw perfilError;
       }
 
-      // 3. Si existe, cargar datos reales
+
+      // ------------------------------------------------------
+      // 3. SI EXISTE PERFIL, CARGAR LOS DATOS
+      // ------------------------------------------------------
+
       if (perfil) {
+        // Nombre.
         setNombre(
           perfil.full_name ??
             user.user_metadata?.full_name ??
             ''
         );
 
+
+        // Edad.
         setEdad(
-          perfil.age !== null && perfil.age !== undefined
+          perfil.age !== null &&
+          perfil.age !== undefined
             ? String(perfil.age)
             : ''
         );
 
-        setBio(perfil.bio ?? '');
-        setEquipo(perfil.favorite_team ?? '');
-        setInstagram(perfil.instagram ?? '');
+
+        // Información personal.
+        setBio(
+          perfil.bio ?? ''
+        );
+
+        setEquipo(
+          perfil.favorite_team ?? ''
+        );
+
+        setInstagram(
+          perfil.instagram ?? ''
+        );
+
+
+        // ----------------------------------------------------
+        // DEPORTES REALES DESDE SUPABASE
+        // ----------------------------------------------------
+
+        setDeportes(
+          Array.isArray(perfil.sports)
+            ? perfil.sports
+            : []
+        );
+
+
+        // ----------------------------------------------------
+        // NIVEL REAL DESDE SUPABASE
+        // ----------------------------------------------------
+
+        setNivelJuego(
+          perfil.skill_level ?? ''
+        );
       } else {
-        // Respaldo por si existe un usuario de Auth
-        // pero todavía no tiene fila en profiles.
+        // ----------------------------------------------------
+        // RESPALDO
+        // ----------------------------------------------------
+        // Esto solamente debería ocurrir si existe el usuario
+        // en Auth, pero todavía no existe una fila en profiles.
+        // ----------------------------------------------------
+
         const nombreInicial =
           user.user_metadata?.full_name ?? '';
 
+
         setNombre(nombreInicial);
 
-        const { error: crearError } = await supabase
+
+        const {
+          error: crearError,
+        } = await supabase
           .from('profiles')
           .insert({
             id: user.id,
-            full_name: nombreInicial || null,
+            full_name:
+              nombreInicial || null,
           });
+
 
         if (crearError) {
           throw crearError;
         }
       }
     } catch (error: any) {
-      console.log('Error cargando perfil:', error);
+      console.log(
+        'Error cargando perfil:',
+        error
+      );
+
 
       Alert.alert(
         'Error',
@@ -134,8 +381,17 @@ export default function PerfilScreen() {
     }
   }
 
+
+  // ==========================================================
+  // GUARDAR INFORMACIÓN PERSONAL
+  // ==========================================================
+
   async function handleGuardar() {
-    if (!nombre.trim() || !edad.trim()) {
+    // Nombre y edad son obligatorios.
+    if (
+      !nombre.trim() ||
+      !edad.trim()
+    ) {
       Alert.alert(
         'Campos requeridos',
         'Por favor ingresa tu nombre y edad.'
@@ -144,8 +400,13 @@ export default function PerfilScreen() {
       return;
     }
 
-    const edadNumero = Number(edad);
 
+    // Convertimos la edad desde string a número.
+    const edadNumero =
+      Number(edad);
+
+
+    // Validación básica de edad.
     if (
       !Number.isInteger(edadNumero) ||
       edadNumero <= 0 ||
@@ -159,17 +420,25 @@ export default function PerfilScreen() {
       return;
     }
 
+
     try {
       setGuardando(true);
+
+
+      // ------------------------------------------------------
+      // OBTENER USUARIO ACTUAL
+      // ------------------------------------------------------
 
       const {
         data: { user },
         error: userError,
       } = await supabase.auth.getUser();
 
+
       if (userError) {
         throw userError;
       }
+
 
       if (!user) {
         Alert.alert(
@@ -178,38 +447,72 @@ export default function PerfilScreen() {
         );
 
         router.replace('/login');
+
         return;
       }
 
-      const { error: perfilError } = await supabase
+
+      // ------------------------------------------------------
+      // ACTUALIZAR PERFIL
+      // ------------------------------------------------------
+      //
+      // Importante:
+      // Aquí NO modificamos sports ni skill_level.
+      //
+      // Esos valores se administran desde deportes.tsx.
+      // ------------------------------------------------------
+
+      const {
+        error: perfilError,
+      } = await supabase
         .from('profiles')
         .upsert(
           {
             id: user.id,
-            full_name: nombre.trim(),
-            age: edadNumero,
-            bio: bio.trim() || null,
-            favorite_team: equipo.trim() || null,
-            instagram: instagram.trim() || null,
-            updated_at: new Date().toISOString(),
+
+            full_name:
+              nombre.trim(),
+
+            age:
+              edadNumero,
+
+            bio:
+              bio.trim() || null,
+
+            favorite_team:
+              equipo.trim() || null,
+
+            instagram:
+              instagram.trim() || null,
+
+            updated_at:
+              new Date().toISOString(),
           },
           {
             onConflict: 'id',
           }
         );
 
+
       if (perfilError) {
         throw perfilError;
       }
 
+
+      // Volvemos al modo vista.
       setModoEdicion(false);
+
 
       Alert.alert(
         '¡Perfil actualizado!',
         'Tus cambios se guardaron correctamente en FitMatch.'
       );
     } catch (error: any) {
-      console.log('Error guardando perfil:', error);
+      console.log(
+        'Error guardando perfil:',
+        error
+      );
+
 
       Alert.alert(
         'Error al guardar',
@@ -221,8 +524,16 @@ export default function PerfilScreen() {
     }
   }
 
+
+  // ==========================================================
+  // CERRAR SESIÓN
+  // ==========================================================
+
   async function handleLogout() {
-    const { error } = await supabase.auth.signOut();
+    const {
+      error,
+    } = await supabase.auth.signOut();
+
 
     if (error) {
       Alert.alert(
@@ -233,12 +544,28 @@ export default function PerfilScreen() {
       return;
     }
 
+
+    // Volver al login.
     router.replace('/login');
   }
 
-  async function handleCambiarTema(value: boolean) {
-    await setTheme(value ? 'dark' : 'light');
+
+  // ==========================================================
+  // CAMBIAR TEMA
+  // ==========================================================
+
+  async function handleCambiarTema(
+    value: boolean
+  ) {
+    await setTheme(
+      value ? 'dark' : 'light'
+    );
   }
+
+
+  // ==========================================================
+  // PANTALLA DE CARGA
+  // ==========================================================
 
   if (cargandoPerfil) {
     return (
@@ -246,11 +573,16 @@ export default function PerfilScreen() {
         style={[
           styles.safeArea,
           {
-            backgroundColor: colors.background,
+            backgroundColor:
+              colors.background,
           },
         ]}
       >
-        <View style={styles.loadingContainer}>
+        <View
+          style={
+            styles.loadingContainer
+          }
+        >
           <ActivityIndicator
             size="large"
             color={colors.primary}
@@ -260,7 +592,8 @@ export default function PerfilScreen() {
             style={[
               styles.loadingText,
               {
-                color: colors.secondaryText,
+                color:
+                  colors.secondaryText,
               },
             ]}
           >
@@ -271,35 +604,59 @@ export default function PerfilScreen() {
     );
   }
 
+
+  // ==========================================================
+  // INTERFAZ PRINCIPAL
+  // ==========================================================
+
   return (
     <SafeAreaView
       style={[
         styles.safeArea,
         {
-          backgroundColor: colors.background,
+          backgroundColor:
+            colors.background,
         },
       ]}
     >
       <ScrollView
-        contentContainerStyle={styles.container}
-        showsVerticalScrollIndicator={false}
+        contentContainerStyle={
+          styles.container
+        }
+        showsVerticalScrollIndicator={
+          false
+        }
       >
-        {/* Header / Avatar */}
+        {/* ==================================================
+            HEADER / INFORMACIÓN PRINCIPAL
+        ================================================== */}
 
         <View style={styles.header}>
+          {/* Avatar */}
+
           <View
             style={[
               styles.avatarContainer,
               {
-                backgroundColor: colors.primarySoft,
-                borderColor: colors.primary,
+                backgroundColor:
+                  colors.primarySoft,
+
+                borderColor:
+                  colors.primary,
               },
             ]}
           >
-            <Text style={styles.avatarEmoji}>
+            <Text
+              style={
+                styles.avatarEmoji
+              }
+            >
               🏃‍♂️
             </Text>
           </View>
+
+
+          {/* Nombre + edad */}
 
           <Text
             style={[
@@ -309,26 +666,38 @@ export default function PerfilScreen() {
               },
             ]}
           >
-            {nombre || 'Usuario FitMatch'}
-            {edad ? `, ${edad}` : ''}
+            {nombre ||
+              'Usuario FitMatch'}
+
+            {edad
+              ? `, ${edad}`
+              : ''}
           </Text>
+
+
+          {/* Correo */}
 
           <Text
             style={[
               styles.userEmail,
               {
-                color: colors.secondaryText,
+                color:
+                  colors.secondaryText,
               },
             ]}
           >
             {email}
           </Text>
 
+
+          {/* Biografía */}
+
           <Text
             style={[
               styles.userBio,
               {
-                color: colors.secondaryText,
+                color:
+                  colors.secondaryText,
               },
             ]}
           >
@@ -337,23 +706,32 @@ export default function PerfilScreen() {
               : 'Aún no has agregado una biografía.'}
           </Text>
 
+
+          {/* Botón editar perfil */}
+
           <TouchableOpacity
             style={[
               styles.editToggleBtn,
               {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
+                backgroundColor:
+                  colors.card,
+
+                borderColor:
+                  colors.border,
               },
             ]}
             onPress={() =>
-              setModoEdicion(!modoEdicion)
+              setModoEdicion(
+                !modoEdicion
+              )
             }
           >
             <Text
               style={[
                 styles.editToggleText,
                 {
-                  color: colors.text,
+                  color:
+                    colors.text,
                 },
               ]}
             >
@@ -364,15 +742,21 @@ export default function PerfilScreen() {
           </TouchableOpacity>
         </View>
 
-        {modoEdicion ? (
-          /* MODO EDICIÓN */
 
+        {/* ==================================================
+            MODO EDICIÓN
+        ================================================== */}
+
+        {modoEdicion ? (
           <View
             style={[
               styles.formCard,
               {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
+                backgroundColor:
+                  colors.card,
+
+                borderColor:
+                  colors.border,
               },
             ]}
           >
@@ -387,11 +771,15 @@ export default function PerfilScreen() {
               Editar Información
             </Text>
 
+
+            {/* Nombre */}
+
             <Text
               style={[
                 styles.label,
                 {
-                  color: colors.secondaryText,
+                  color:
+                    colors.secondaryText,
                 },
               ]}
             >
@@ -402,24 +790,35 @@ export default function PerfilScreen() {
               style={[
                 styles.input,
                 {
-                  backgroundColor: colors.input,
-                  borderColor: colors.border,
-                  color: colors.text,
+                  backgroundColor:
+                    colors.input,
+
+                  borderColor:
+                    colors.border,
+
+                  color:
+                    colors.text,
                 },
               ]}
               value={nombre}
-              onChangeText={setNombre}
+              onChangeText={
+                setNombre
+              }
               placeholder="Tu nombre"
               placeholderTextColor={
                 colors.secondaryText
               }
             />
 
+
+            {/* Edad */}
+
             <Text
               style={[
                 styles.label,
                 {
-                  color: colors.secondaryText,
+                  color:
+                    colors.secondaryText,
                 },
               ]}
             >
@@ -430,9 +829,14 @@ export default function PerfilScreen() {
               style={[
                 styles.input,
                 {
-                  backgroundColor: colors.input,
-                  borderColor: colors.border,
-                  color: colors.text,
+                  backgroundColor:
+                    colors.input,
+
+                  borderColor:
+                    colors.border,
+
+                  color:
+                    colors.text,
                 },
               ]}
               value={edad}
@@ -444,11 +848,15 @@ export default function PerfilScreen() {
               }
             />
 
+
+            {/* Biografía */}
+
             <Text
               style={[
                 styles.label,
                 {
-                  color: colors.secondaryText,
+                  color:
+                    colors.secondaryText,
                 },
               ]}
             >
@@ -460,9 +868,14 @@ export default function PerfilScreen() {
                 styles.input,
                 styles.bioInput,
                 {
-                  backgroundColor: colors.input,
-                  borderColor: colors.border,
-                  color: colors.text,
+                  backgroundColor:
+                    colors.input,
+
+                  borderColor:
+                    colors.border,
+
+                  color:
+                    colors.text,
                 },
               ]}
               value={bio}
@@ -474,11 +887,15 @@ export default function PerfilScreen() {
               }
             />
 
+
+            {/* Equipo favorito */}
+
             <Text
               style={[
                 styles.label,
                 {
-                  color: colors.secondaryText,
+                  color:
+                    colors.secondaryText,
                 },
               ]}
             >
@@ -489,24 +906,35 @@ export default function PerfilScreen() {
               style={[
                 styles.input,
                 {
-                  backgroundColor: colors.input,
-                  borderColor: colors.border,
-                  color: colors.text,
+                  backgroundColor:
+                    colors.input,
+
+                  borderColor:
+                    colors.border,
+
+                  color:
+                    colors.text,
                 },
               ]}
               value={equipo}
-              onChangeText={setEquipo}
+              onChangeText={
+                setEquipo
+              }
               placeholder="Ej: Colo-Colo, Lakers..."
               placeholderTextColor={
                 colors.secondaryText
               }
             />
 
+
+            {/* Instagram */}
+
             <Text
               style={[
                 styles.label,
                 {
-                  color: colors.secondaryText,
+                  color:
+                    colors.secondaryText,
                 },
               ]}
             >
@@ -517,13 +945,20 @@ export default function PerfilScreen() {
               style={[
                 styles.input,
                 {
-                  backgroundColor: colors.input,
-                  borderColor: colors.border,
-                  color: colors.text,
+                  backgroundColor:
+                    colors.input,
+
+                  borderColor:
+                    colors.border,
+
+                  color:
+                    colors.text,
                 },
               ]}
               value={instagram}
-              onChangeText={setInstagram}
+              onChangeText={
+                setInstagram
+              }
               placeholder="@usuario"
               placeholderTextColor={
                 colors.secondaryText
@@ -531,38 +966,67 @@ export default function PerfilScreen() {
               autoCapitalize="none"
             />
 
+
+            {/* Guardar */}
+
             <TouchableOpacity
               style={[
                 styles.saveBtn,
                 {
-                  backgroundColor: colors.primary,
-                  opacity: guardando ? 0.7 : 1,
+                  backgroundColor:
+                    colors.primary,
+
+                  opacity:
+                    guardando
+                      ? 0.7
+                      : 1,
                 },
               ]}
-              onPress={handleGuardar}
-              disabled={guardando}
+              onPress={
+                handleGuardar
+              }
+              disabled={
+                guardando
+              }
             >
               {guardando ? (
-                <ActivityIndicator color="#FFFFFF" />
+                <ActivityIndicator
+                  color="#FFFFFF"
+                />
               ) : (
-                <Text style={styles.saveBtnText}>
+                <Text
+                  style={
+                    styles.saveBtnText
+                  }
+                >
                   Guardar Cambios
                 </Text>
               )}
             </TouchableOpacity>
           </View>
         ) : (
-          /* MODO VISTA */
+          /* ================================================
+             MODO VISTA
+          ================================================ */
 
-          <View style={styles.cardsContainer}>
-            {/* Deportes */}
+          <View
+            style={
+              styles.cardsContainer
+            }
+          >
+            {/* ==============================================
+                MIS DEPORTES
+            ============================================== */}
 
             <View
               style={[
                 styles.infoCard,
                 {
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
+                  backgroundColor:
+                    colors.card,
+
+                  borderColor:
+                    colors.border,
                 },
               ]}
             >
@@ -570,50 +1034,97 @@ export default function PerfilScreen() {
                 style={[
                   styles.cardTitle,
                   {
-                    color: colors.text,
+                    color:
+                      colors.text,
                   },
                 ]}
               >
                 ⚡ Mis Deportes
               </Text>
 
-              <View style={styles.chipContainer}>
-                {deportes.map((dep, index) => (
-                  <View
-                    key={index}
+
+              <View
+                style={
+                  styles.chipContainer
+                }
+              >
+                {deportes.length > 0 ? (
+                  deportes.map(
+                    (deporteId) => {
+                      // Buscamos la información visual
+                      // correspondiente al ID guardado.
+
+                      const deporte =
+                        DEPORTES_DISPONIBLES.find(
+                          (item) =>
+                            item.id ===
+                            deporteId
+                        );
+
+
+                      return (
+                        <View
+                          key={
+                            deporteId
+                          }
+                          style={[
+                            styles.sportChip,
+                            {
+                              backgroundColor:
+                                colors.primarySoft,
+
+                              borderColor:
+                                colors.primary,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.sportChipText,
+                              {
+                                color:
+                                  colors.primary,
+                              },
+                            ]}
+                          >
+                            {deporte
+                              ? `${deporte.icono} ${deporte.nombre}`
+                              : deporteId}
+                          </Text>
+                        </View>
+                      );
+                    }
+                  )
+                ) : (
+                  <Text
                     style={[
-                      styles.sportChip,
+                      styles.infoText,
                       {
-                        backgroundColor:
-                          colors.primarySoft,
-                        borderColor:
-                          colors.primary,
+                        color:
+                          colors.secondaryText,
                       },
                     ]}
                   >
-                    <Text
-                      style={[
-                        styles.sportChipText,
-                        {
-                          color: colors.primary,
-                        },
-                      ]}
-                    >
-                      {dep}
-                    </Text>
-                  </View>
-                ))}
+                    No has seleccionado deportes.
+                  </Text>
+                )}
               </View>
             </View>
 
-            {/* Equipo */}
+
+            {/* ==============================================
+                NIVEL DE JUEGO
+            ============================================== */}
 
             <View
               style={[
                 styles.infoCard,
                 {
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
+                  backgroundColor:
+                    colors.card,
+
+                  borderColor:
+                    colors.border,
                 },
               ]}
             >
@@ -621,7 +1132,81 @@ export default function PerfilScreen() {
                 style={[
                   styles.cardTitle,
                   {
-                    color: colors.text,
+                    color:
+                      colors.text,
+                  },
+                ]}
+              >
+                🎯 Nivel de Juego
+              </Text>
+
+              <Text
+                style={[
+                  styles.infoText,
+                  {
+                    color:
+                      colors.secondaryText,
+                  },
+                ]}
+              >
+                {nivelJuego ||
+                  'No especificado'}
+              </Text>
+
+
+              {/* Volver a deportes.tsx */}
+
+              <TouchableOpacity
+                style={[
+                  styles.editSportsBtn,
+                  {
+                    borderColor:
+                      colors.primary,
+                  },
+                ]}
+                onPress={() =>
+                  router.push(
+                    '/deportes'
+                  )
+                }
+              >
+                <Text
+                  style={[
+                    styles.editSportsText,
+                    {
+                      color:
+                        colors.primary,
+                    },
+                  ]}
+                >
+                  Editar preferencias deportivas
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+
+            {/* ==============================================
+                EQUIPO FAVORITO
+            ============================================== */}
+
+            <View
+              style={[
+                styles.infoCard,
+                {
+                  backgroundColor:
+                    colors.card,
+
+                  borderColor:
+                    colors.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.cardTitle,
+                  {
+                    color:
+                      colors.text,
                   },
                 ]}
               >
@@ -632,22 +1217,30 @@ export default function PerfilScreen() {
                 style={[
                   styles.infoText,
                   {
-                    color: colors.secondaryText,
+                    color:
+                      colors.secondaryText,
                   },
                 ]}
               >
-                {equipo || 'No especificado'}
+                {equipo ||
+                  'No especificado'}
               </Text>
             </View>
 
-            {/* Redes Sociales */}
+
+            {/* ==============================================
+                REDES SOCIALES
+            ============================================== */}
 
             <View
               style={[
                 styles.infoCard,
                 {
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
+                  backgroundColor:
+                    colors.card,
+
+                  borderColor:
+                    colors.border,
                 },
               ]}
             >
@@ -655,7 +1248,8 @@ export default function PerfilScreen() {
                 style={[
                   styles.cardTitle,
                   {
-                    color: colors.text,
+                    color:
+                      colors.text,
                   },
                 ]}
               >
@@ -666,23 +1260,31 @@ export default function PerfilScreen() {
                 style={[
                   styles.infoText,
                   {
-                    color: colors.secondaryText,
+                    color:
+                      colors.secondaryText,
                   },
                 ]}
               >
                 Instagram:{' '}
-                {instagram || 'No configurado'}
+                {instagram ||
+                  'No configurado'}
               </Text>
             </View>
 
-            {/* Cuenta */}
+
+            {/* ==============================================
+                CUENTA
+            ============================================== */}
 
             <View
               style={[
                 styles.infoCard,
                 {
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
+                  backgroundColor:
+                    colors.card,
+
+                  borderColor:
+                    colors.border,
                 },
               ]}
             >
@@ -690,7 +1292,8 @@ export default function PerfilScreen() {
                 style={[
                   styles.cardTitle,
                   {
-                    color: colors.text,
+                    color:
+                      colors.text,
                   },
                 ]}
               >
@@ -701,22 +1304,30 @@ export default function PerfilScreen() {
                 style={[
                   styles.infoText,
                   {
-                    color: colors.secondaryText,
+                    color:
+                      colors.secondaryText,
                   },
                 ]}
               >
-                {email || 'Correo no disponible'}
+                {email ||
+                  'Correo no disponible'}
               </Text>
             </View>
 
-            {/* Configuración */}
+
+            {/* ==============================================
+                CONFIGURACIÓN
+            ============================================== */}
 
             <View
               style={[
                 styles.infoCard,
                 {
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
+                  backgroundColor:
+                    colors.card,
+
+                  borderColor:
+                    colors.border,
                 },
               ]}
             >
@@ -724,22 +1335,31 @@ export default function PerfilScreen() {
                 style={[
                   styles.cardTitle,
                   {
-                    color: colors.text,
+                    color:
+                      colors.text,
                   },
                 ]}
               >
                 ⚙️ Configuración
               </Text>
 
-              <View style={styles.settingRow}>
+
+              <View
+                style={
+                  styles.settingRow
+                }
+              >
                 <View
-                  style={styles.settingTextContainer}
+                  style={
+                    styles.settingTextContainer
+                  }
                 >
                   <Text
                     style={[
                       styles.settingTitle,
                       {
-                        color: colors.text,
+                        color:
+                          colors.text,
                       },
                     ]}
                   >
@@ -759,21 +1379,28 @@ export default function PerfilScreen() {
                   </Text>
                 </View>
 
+
                 <Switch
                   value={isDark}
                   onValueChange={
                     handleCambiarTema
                   }
                   trackColor={{
-                    false: '#CBD5E1',
-                    true: colors.primary,
+                    false:
+                      '#CBD5E1',
+
+                    true:
+                      colors.primary,
                   }}
                   thumbColor="#FFFFFF"
                 />
               </View>
             </View>
 
-            {/* Cerrar Sesión */}
+
+            {/* ==============================================
+                CERRAR SESIÓN
+            ============================================== */}
 
             <TouchableOpacity
               style={[
@@ -783,13 +1410,16 @@ export default function PerfilScreen() {
                     colors.dangerBackground,
                 },
               ]}
-              onPress={handleLogout}
+              onPress={
+                handleLogout
+              }
             >
               <Text
                 style={[
                   styles.logoutText,
                   {
-                    color: colors.dangerText,
+                    color:
+                      colors.dangerText,
                   },
                 ]}
               >
@@ -803,15 +1433,25 @@ export default function PerfilScreen() {
   );
 }
 
+
+// ============================================================
+// ESTILOS
+// ============================================================
+
 const styles = StyleSheet.create({
+  // Contenedor principal.
   safeArea: {
     flex: 1,
   },
 
+
+  // Contenido desplazable.
   container: {
     padding: 20,
   },
 
+
+  // Pantalla de carga.
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -819,14 +1459,21 @@ const styles = StyleSheet.create({
     gap: 12,
   },
 
+
   loadingText: {
     fontSize: 14,
   },
+
+
+  // ==========================================================
+  // HEADER
+  // ==========================================================
 
   header: {
     alignItems: 'center',
     marginBottom: 20,
   },
+
 
   avatarContainer: {
     width: 90,
@@ -838,9 +1485,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 
+
   avatarEmoji: {
     fontSize: 50,
   },
+
 
   userName: {
     fontSize: 22,
@@ -848,10 +1497,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
+
   userEmail: {
     fontSize: 12,
     marginTop: 4,
   },
+
 
   userBio: {
     fontSize: 13,
@@ -861,6 +1512,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
 
+
   editToggleBtn: {
     marginTop: 12,
     paddingHorizontal: 16,
@@ -869,14 +1521,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
 
+
   editToggleText: {
     fontWeight: '600',
     fontSize: 13,
   },
 
+
+  // ==========================================================
+  // TARJETAS
+  // ==========================================================
+
   cardsContainer: {
     gap: 16,
   },
+
 
   infoCard: {
     padding: 16,
@@ -885,20 +1544,28 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 
+
   cardTitle: {
     fontSize: 14,
     fontWeight: 'bold',
   },
 
+
   infoText: {
     fontSize: 14,
   },
+
+
+  // ==========================================================
+  // DEPORTES
+  // ==========================================================
 
   chipContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
+
 
   sportChip: {
     paddingHorizontal: 12,
@@ -907,10 +1574,33 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
 
+
   sportChipText: {
     fontSize: 12,
     fontWeight: 'bold',
   },
+
+
+  // Botón para volver a deportes.tsx.
+  editSportsBtn: {
+    marginTop: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+
+
+  editSportsText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+
+  // ==========================================================
+  // FORMULARIO DE EDICIÓN
+  // ==========================================================
 
   formCard: {
     padding: 16,
@@ -919,16 +1609,19 @@ const styles = StyleSheet.create({
     gap: 12,
   },
 
+
   sectionTitle: {
     fontSize: 16,
     fontWeight: 'bold',
     marginBottom: 4,
   },
 
+
   label: {
     fontSize: 12,
     fontWeight: '600',
   },
+
 
   input: {
     borderWidth: 1,
@@ -937,10 +1630,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
+
   bioInput: {
     height: 80,
     textAlignVertical: 'top',
   },
+
 
   saveBtn: {
     paddingVertical: 12,
@@ -949,32 +1644,47 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
 
+
   saveBtnText: {
     color: '#FFFFFF',
     fontWeight: 'bold',
     fontSize: 14,
   },
 
+
+  // ==========================================================
+  // CONFIGURACIÓN
+  // ==========================================================
+
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent:
+      'space-between',
     gap: 12,
   },
+
 
   settingTextContainer: {
     flex: 1,
   },
+
 
   settingTitle: {
     fontSize: 14,
     fontWeight: '600',
   },
 
+
   settingDescription: {
     fontSize: 12,
     marginTop: 2,
   },
+
+
+  // ==========================================================
+  // CERRAR SESIÓN
+  // ==========================================================
 
   logoutBtn: {
     padding: 16,
@@ -982,6 +1692,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 10,
   },
+
 
   logoutText: {
     fontWeight: 'bold',
