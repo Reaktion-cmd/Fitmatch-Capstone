@@ -1,6 +1,7 @@
 // ============================================================
 // FITMATCH - EVENTOS DEPORTIVOS
 // ============================================================
+//
 // Esta pantalla permite:
 //
 // - Cargar eventos reales desde Supabase.
@@ -12,12 +13,14 @@
 // - Cancelar participación.
 // - Calcular cupos restantes.
 // - Buscar y filtrar eventos.
+// - Abrir el detalle completo de cada evento.
 // - Mantener compatibilidad con modo claro / oscuro.
 //
 // Tablas utilizadas:
 //
 // public.events
 // public.event_participants
+//
 // ============================================================
 
 import React, {
@@ -37,24 +40,20 @@ import {
   ActivityIndicator,
 } from 'react-native';
 
-// SafeAreaView recomendado para Expo / React Native.
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-// Navegación y recarga al volver a la pestaña.
 import {
   useFocusEffect,
   useRouter,
 } from 'expo-router';
 
-// Supabase.
 import { supabase } from '../../lib/supabase';
 
-// Tema global de FitMatch.
 import { useTheme } from '../../lib/ThemeContext';
 
 
 // ============================================================
-// INTERFAZ DE EVENTO UTILIZADA POR LA APP
+// INTERFAZ DE EVENTO
 // ============================================================
 
 interface Evento {
@@ -68,10 +67,10 @@ interface Evento {
 
   fecha: string;
 
-  // Cupos que todavía quedan disponibles.
+  // Cupos disponibles actualmente.
   cupos: number;
 
-  // Cupos solicitados originalmente.
+  // Cupos originalmente publicados.
   cuposTotales: number;
 
   // UUID del creador.
@@ -80,7 +79,7 @@ interface Evento {
   // true si el usuario autenticado creó el evento.
   esMio: boolean;
 
-  // true si el usuario autenticado se unió al evento.
+  // true si el usuario autenticado está inscrito.
   unido: boolean;
 }
 
@@ -90,7 +89,8 @@ interface Evento {
 // ============================================================
 
 export default function EventosScreen() {
-  const router = useRouter();
+  const router =
+    useRouter();
 
   const {
     isDark,
@@ -102,274 +102,364 @@ export default function EventosScreen() {
   // ESTADOS GENERALES
   // ==========================================================
 
-  const [vista, setVista] =
-    useState<'disponibles' | 'mis_eventos'>(
+  const [
+    vista,
+    setVista,
+  ] =
+    useState<
+      'disponibles' |
+      'mis_eventos'
+    >(
       'disponibles'
     );
 
-  const [filtroDeporte, setFiltroDeporte] =
-    useState<string>('Todos');
 
-  const [busqueda, setBusqueda] =
-    useState<string>('');
-
-  const [modalCrear, setModalCrear] =
-    useState<boolean>(false);
-
-
-  // Lista de eventos obtenida desde Supabase.
-  const [eventos, setEventos] =
-    useState<Evento[]>([]);
+  const [
+    filtroDeporte,
+    setFiltroDeporte,
+  ] =
+    useState<string>(
+      'Todos'
+    );
 
 
-  // Estados de carga.
-  const [cargandoEventos, setCargandoEventos] =
+  const [
+    busqueda,
+    setBusqueda,
+  ] =
+    useState<string>(
+      ''
+    );
+
+
+  const [
+    modalCrear,
+    setModalCrear,
+  ] =
+    useState<boolean>(
+      false
+    );
+
+
+  const [
+    eventos,
+    setEventos,
+  ] =
+    useState<Evento[]>(
+      []
+    );
+
+
+  const [
+    cargandoEventos,
+    setCargandoEventos,
+  ] =
     useState(true);
 
-  const [guardandoEvento, setGuardandoEvento] =
+
+  const [
+    guardandoEvento,
+    setGuardandoEvento,
+  ] =
     useState(false);
 
-  // Guarda el ID del evento sobre el que estamos realizando
-  // una acción de unirse o cancelar.
-  const [eventoProcesando, setEventoProcesando] =
-    useState<string | null>(null);
+
+  const [
+    eventoProcesando,
+    setEventoProcesando,
+  ] =
+    useState<
+      string |
+      null
+    >(
+      null
+    );
 
 
   // ==========================================================
-  // FORMULARIO PARA CREAR EVENTO
+  // FORMULARIO CREAR EVENTO
   // ==========================================================
 
-  const [titulo, setTitulo] =
+  const [
+    titulo,
+    setTitulo,
+  ] =
     useState('');
 
-  const [deporte, setDeporte] =
-    useState('Fútbol');
 
-  const [lugar, setLugar] =
+  const [
+    deporte,
+    setDeporte,
+  ] =
+    useState(
+      'Fútbol'
+    );
+
+
+  const [
+    lugar,
+    setLugar,
+  ] =
     useState('');
 
-  const [fecha, setFecha] =
+
+  const [
+    fecha,
+    setFecha,
+  ] =
     useState('');
 
-  const [cupos, setCupos] =
+
+  const [
+    cupos,
+    setCupos,
+  ] =
     useState('');
 
 
   // ==========================================================
-  // CARGAR EVENTOS AL ENTRAR A LA PANTALLA
-  // ==========================================================
-  //
-  // useFocusEffect permite actualizar la información cada vez
-  // que regresamos a la pestaña Eventos.
+  // RECARGAR EVENTOS AL ENTRAR
   // ==========================================================
 
   useFocusEffect(
-    useCallback(() => {
-      cargarEventos();
-    }, [])
+    useCallback(
+      () => {
+        cargarEventos();
+      },
+      []
+    )
   );
 
 
   // ==========================================================
-  // CARGAR EVENTOS DESDE SUPABASE
+  // CARGAR EVENTOS
   // ==========================================================
 
   async function cargarEventos() {
     try {
-      setCargandoEventos(true);
+      setCargandoEventos(
+        true
+      );
 
 
       // ------------------------------------------------------
-      // 1. OBTENER USUARIO AUTENTICADO
+      // 1. USUARIO AUTENTICADO
       // ------------------------------------------------------
 
       const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+        data: {
+          user,
+        },
+        error:
+          userError,
+      } =
+        await supabase.auth.getUser();
 
 
-      if (userError) {
+      if (
+        userError
+      ) {
         throw userError;
       }
 
 
-      if (!user) {
+      if (
+        !user
+      ) {
         Alert.alert(
           'Sesión no encontrada',
           'Debes iniciar sesión nuevamente.'
         );
 
-        router.replace('/login');
+        router.replace(
+          '/login'
+        );
 
         return;
       }
 
 
       // ------------------------------------------------------
-      // 2. OBTENER TODOS LOS EVENTOS
+      // 2. OBTENER EVENTOS
       // ------------------------------------------------------
 
       const {
-        data: eventosData,
-        error: eventosError,
-      } = await supabase
-        .from('events')
-        .select(
-          `
-          id,
-          creator_id,
-          title,
-          sport,
-          location,
-          date_text,
-          slots,
-          created_at
-          `
-        )
-        .order(
-          'created_at',
-          {
-            ascending: false,
-          }
-        );
+        data:
+          eventosData,
+        error:
+          eventosError,
+      } =
+        await supabase
+          .from(
+            'events'
+          )
+          .select(
+            `
+            id,
+            creator_id,
+            title,
+            sport,
+            location,
+            date_text,
+            slots,
+            created_at
+            `
+          )
+          .order(
+            'created_at',
+            {
+              ascending:
+                false,
+            }
+          );
 
 
-      if (eventosError) {
+      if (
+        eventosError
+      ) {
         throw eventosError;
       }
 
 
-      // Si todavía no existen eventos, dejamos la lista vacía.
       if (
         !eventosData ||
-        eventosData.length === 0
+        eventosData.length ===
+          0
       ) {
-        setEventos([]);
+        setEventos(
+          []
+        );
 
         return;
       }
 
 
       // ------------------------------------------------------
-      // 3. OBTENER PARTICIPANTES
-      // ------------------------------------------------------
-      //
-      // Esta tabla nos permite saber:
-      //
-      // - quién se unió a cada evento;
-      // - cuántos cupos quedan;
-      // - si el usuario actual ya está inscrito.
+      // 3. PARTICIPANTES
       // ------------------------------------------------------
 
       const {
-        data: participantesData,
-        error: participantesError,
-      } = await supabase
-        .from('event_participants')
-        .select(
-          `
-          event_id,
-          user_id
-          `
-        );
+        data:
+          participantesData,
+        error:
+          participantesError,
+      } =
+        await supabase
+          .from(
+            'event_participants'
+          )
+          .select(
+            `
+            event_id,
+            user_id
+            `
+          );
 
 
-      if (participantesError) {
+      if (
+        participantesError
+      ) {
         throw participantesError;
       }
 
 
       const participantes =
-        participantesData ?? [];
+        participantesData ??
+        [];
 
 
       // ------------------------------------------------------
-      // 4. TRANSFORMAR DATOS DE SUPABASE AL FORMATO DE LA APP
+      // 4. TRANSFORMAR EVENTOS
       // ------------------------------------------------------
 
-      const eventosTransformados: Evento[] =
-        eventosData.map((evento) => {
-          // Participantes de este evento.
-          const participantesEvento =
-            participantes.filter(
-              (participante) =>
-                participante.event_id ===
-                evento.id
-            );
+      const eventosTransformados:
+        Evento[] =
+        eventosData.map(
+          (
+            evento
+          ) => {
+            const participantesEvento =
+              participantes.filter(
+                (
+                  participante
+                ) =>
+                  participante.event_id ===
+                  evento.id
+              );
 
 
-          // Cantidad de personas inscritas.
-          const cantidadParticipantes =
-            participantesEvento.length;
+            const cantidadParticipantes =
+              participantesEvento.length;
 
 
-          // Cupos originalmente solicitados.
-          const cuposTotales =
-            Number(evento.slots);
+            const cuposTotales =
+              Number(
+                evento.slots
+              );
 
 
-          // Cupos restantes.
-          const cuposRestantes =
-            Math.max(
-              cuposTotales -
-                cantidadParticipantes,
-              0
-            );
+            const cuposRestantes =
+              Math.max(
+                cuposTotales -
+                  cantidadParticipantes,
+                0
+              );
 
 
-          // Saber si el usuario actual ya está inscrito.
-          const usuarioEstaUnido =
-            participantesEvento.some(
-              (participante) =>
-                participante.user_id ===
-                user.id
-            );
+            const usuarioEstaUnido =
+              participantesEvento.some(
+                (
+                  participante
+                ) =>
+                  participante.user_id ===
+                  user.id
+              );
 
 
-          // Saber si el evento fue creado por el usuario actual.
-          const esMio =
-            evento.creator_id ===
-            user.id;
+            const esMio =
+              evento.creator_id ===
+              user.id;
 
 
-          return {
-            id:
-              evento.id,
+            return {
+              id:
+                evento.id,
 
-            titulo:
-              evento.title,
+              titulo:
+                evento.title,
 
-            deporte:
-              evento.sport,
+              deporte:
+                evento.sport,
 
-            lugar:
-              evento.location,
+              lugar:
+                evento.location,
 
-            fecha:
-              evento.date_text,
+              fecha:
+                evento.date_text,
 
-            cupos:
-              cuposRestantes,
+              cupos:
+                cuposRestantes,
 
-            cuposTotales,
+              cuposTotales,
 
-            creatorId:
-              evento.creator_id,
+              creatorId:
+                evento.creator_id,
 
-            esMio,
+              esMio,
 
-            unido:
-              usuarioEstaUnido,
-          };
-        });
+              unido:
+                usuarioEstaUnido,
+            };
+          }
+        );
 
 
-      // Guardamos los eventos reales.
       setEventos(
         eventosTransformados
       );
-    } catch (error: any) {
+    } catch (
+      error: any
+    ) {
       console.log(
         'Error cargando eventos:',
         error
@@ -382,20 +472,18 @@ export default function EventosScreen() {
           'No se pudieron cargar los eventos.'
       );
     } finally {
-      setCargandoEventos(false);
+      setCargandoEventos(
+        false
+      );
     }
   }
 
 
   // ==========================================================
-  // CREAR NUEVO EVENTO
+  // CREAR EVENTO
   // ==========================================================
 
   async function handleCrearEvento() {
-    // --------------------------------------------------------
-    // VALIDAR CAMPOS
-    // --------------------------------------------------------
-
     if (
       !titulo.trim() ||
       !lugar.trim() ||
@@ -411,15 +499,18 @@ export default function EventosScreen() {
     }
 
 
-    // Convertimos los cupos a número.
     const cuposNumero =
-      Number(cupos);
+      Number(
+        cupos
+      );
 
 
-    // Validación.
     if (
-      !Number.isInteger(cuposNumero) ||
-      cuposNumero <= 0
+      !Number.isInteger(
+        cuposNumero
+      ) ||
+      cuposNumero <=
+        0
     ) {
       Alert.alert(
         'Cupos inválidos',
@@ -431,93 +522,111 @@ export default function EventosScreen() {
 
 
     try {
-      setGuardandoEvento(true);
+      setGuardandoEvento(
+        true
+      );
 
-
-      // ------------------------------------------------------
-      // OBTENER USUARIO ACTUAL
-      // ------------------------------------------------------
 
       const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+        data: {
+          user,
+        },
+        error:
+          userError,
+      } =
+        await supabase.auth.getUser();
 
 
-      if (userError) {
+      if (
+        userError
+      ) {
         throw userError;
       }
 
 
-      if (!user) {
+      if (
+        !user
+      ) {
         Alert.alert(
           'Sesión no encontrada',
           'Debes iniciar sesión nuevamente.'
         );
 
-        router.replace('/login');
+        router.replace(
+          '/login'
+        );
 
         return;
       }
 
 
-      // ------------------------------------------------------
-      // INSERTAR EVENTO EN SUPABASE
-      // ------------------------------------------------------
-
       const {
-        error: crearError,
-      } = await supabase
-        .from('events')
-        .insert({
-          creator_id:
-            user.id,
+        error:
+          crearError,
+      } =
+        await supabase
+          .from(
+            'events'
+          )
+          .insert({
+            creator_id:
+              user.id,
 
-          title:
-            titulo.trim(),
+            title:
+              titulo.trim(),
 
-          sport:
-            deporte,
+            sport:
+              deporte,
 
-          location:
-            lugar.trim(),
+            location:
+              lugar.trim(),
 
-          date_text:
-            fecha.trim(),
+            date_text:
+              fecha.trim(),
 
-          slots:
-            cuposNumero,
+            slots:
+              cuposNumero,
 
-          updated_at:
-            new Date().toISOString(),
-        });
+            updated_at:
+              new Date().toISOString(),
+          });
 
 
-      if (crearError) {
+      if (
+        crearError
+      ) {
         throw crearError;
       }
 
 
-      // ------------------------------------------------------
-      // LIMPIAR FORMULARIO
-      // ------------------------------------------------------
+      // Limpiar formulario.
 
-      setTitulo('');
+      setTitulo(
+        ''
+      );
 
-      setDeporte('Fútbol');
+      setDeporte(
+        'Fútbol'
+      );
 
-      setLugar('');
+      setLugar(
+        ''
+      );
 
-      setFecha('');
+      setFecha(
+        ''
+      );
 
-      setCupos('');
+      setCupos(
+        ''
+      );
 
 
-      // Cerramos el modal.
-      setModalCrear(false);
+      setModalCrear(
+        false
+      );
 
 
-      // Recargamos eventos desde Supabase.
       await cargarEventos();
 
 
@@ -525,7 +634,9 @@ export default function EventosScreen() {
         '¡Éxito!',
         'Partido publicado correctamente.'
       );
-    } catch (error: any) {
+    } catch (
+      error: any
+    ) {
       console.log(
         'Error creando evento:',
         error
@@ -538,13 +649,15 @@ export default function EventosScreen() {
           'No se pudo publicar el evento.'
       );
     } finally {
-      setGuardandoEvento(false);
+      setGuardandoEvento(
+        false
+      );
     }
   }
 
 
   // ==========================================================
-  // UNIRSE A UN EVENTO
+  // UNIRSE A EVENTO
   // ==========================================================
 
   async function handleUnirse(
@@ -552,19 +665,25 @@ export default function EventosScreen() {
   ) {
     const evento =
       eventos.find(
-        (item) =>
-          item.id === id
+        (
+          item
+        ) =>
+          item.id ===
+          id
       );
 
 
-    // Verificación adicional.
-    if (!evento) {
+    if (
+      !evento
+    ) {
       return;
     }
 
 
-    // No permitimos unirse si ya no quedan cupos.
-    if (evento.cupos <= 0) {
+    if (
+      evento.cupos <=
+      0
+    ) {
       Alert.alert(
         'Evento completo',
         'Este partido ya no tiene cupos disponibles.'
@@ -575,58 +694,64 @@ export default function EventosScreen() {
 
 
     try {
-      setEventoProcesando(id);
+      setEventoProcesando(
+        id
+      );
 
-
-      // ------------------------------------------------------
-      // OBTENER USUARIO
-      // ------------------------------------------------------
 
       const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+        data: {
+          user,
+        },
+        error:
+          userError,
+      } =
+        await supabase.auth.getUser();
 
 
-      if (userError) {
+      if (
+        userError
+      ) {
         throw userError;
       }
 
 
-      if (!user) {
+      if (
+        !user
+      ) {
         Alert.alert(
           'Sesión no encontrada',
           'Debes iniciar sesión nuevamente.'
         );
 
-        router.replace('/login');
+        router.replace(
+          '/login'
+        );
 
         return;
       }
 
 
-      // ------------------------------------------------------
-      // REGISTRAR PARTICIPACIÓN
-      // ------------------------------------------------------
-
       const {
-        error: unirseError,
-      } = await supabase
-        .from(
-          'event_participants'
-        )
-        .insert({
-          event_id:
-            id,
+        error:
+          unirseError,
+      } =
+        await supabase
+          .from(
+            'event_participants'
+          )
+          .insert({
+            event_id:
+              id,
 
-          user_id:
-            user.id,
-        });
+            user_id:
+              user.id,
+          });
 
 
-      if (unirseError) {
-        // Código 23505:
-        // registro duplicado por clave primaria.
+      if (
+        unirseError
+      ) {
         if (
           unirseError.code ===
           '23505'
@@ -643,7 +768,6 @@ export default function EventosScreen() {
       }
 
 
-      // Actualizamos la lista.
       await cargarEventos();
 
 
@@ -651,7 +775,9 @@ export default function EventosScreen() {
         '¡Te has unido!',
         'Ahora este evento aparece en "Mis Partidos".'
       );
-    } catch (error: any) {
+    } catch (
+      error: any
+    ) {
       console.log(
         'Error uniéndose al evento:',
         error
@@ -664,7 +790,9 @@ export default function EventosScreen() {
           'No se pudo completar la inscripción.'
       );
     } finally {
-      setEventoProcesando(null);
+      setEventoProcesando(
+        null
+      );
     }
   }
 
@@ -677,51 +805,66 @@ export default function EventosScreen() {
     id: string
   ) {
     try {
-      setEventoProcesando(id);
+      setEventoProcesando(
+        id
+      );
 
 
       const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+        data: {
+          user,
+        },
+        error:
+          userError,
+      } =
+        await supabase.auth.getUser();
 
 
-      if (userError) {
+      if (
+        userError
+      ) {
         throw userError;
       }
 
 
-      if (!user) {
+      if (
+        !user
+      ) {
         Alert.alert(
           'Sesión no encontrada',
           'Debes iniciar sesión nuevamente.'
         );
 
-        router.replace('/login');
+        router.replace(
+          '/login'
+        );
 
         return;
       }
 
 
-      // Eliminamos únicamente la participación del usuario.
       const {
-        error: cancelarError,
-      } = await supabase
-        .from(
-          'event_participants'
-        )
-        .delete()
-        .eq(
-          'event_id',
-          id
-        )
-        .eq(
-          'user_id',
-          user.id
-        );
+        error:
+          cancelarError,
+      } =
+        await supabase
+          .from(
+            'event_participants'
+          )
+          .delete()
+          .eq(
+            'event_id',
+            id
+          )
+          .eq(
+            'user_id',
+            user.id
+          );
 
 
-      if (cancelarError) {
+      if (
+        cancelarError
+      ) {
         throw cancelarError;
       }
 
@@ -733,7 +876,9 @@ export default function EventosScreen() {
         'Participación cancelada',
         'Ya no estás inscrito en este partido.'
       );
-    } catch (error: any) {
+    } catch (
+      error: any
+    ) {
       console.log(
         'Error cancelando participación:',
         error
@@ -746,8 +891,29 @@ export default function EventosScreen() {
           'No se pudo cancelar la participación.'
       );
     } finally {
-      setEventoProcesando(null);
+      setEventoProcesando(
+        null
+      );
     }
+  }
+
+
+  // ==========================================================
+  // ABRIR DETALLE
+  // ==========================================================
+
+  function abrirDetalleEvento(
+    id: string
+  ) {
+    router.push({
+      pathname:
+        '/evento/[eventId]',
+
+      params: {
+        eventId:
+          id,
+      },
+    });
   }
 
 
@@ -756,50 +922,57 @@ export default function EventosScreen() {
   // ==========================================================
 
   const eventosFiltrados =
-    eventos.filter((ev) => {
-      // Filtro por deporte.
-      const coincideFiltro =
-        filtroDeporte === 'Todos' ||
-        ev.deporte === filtroDeporte;
+    eventos.filter(
+      (
+        ev
+      ) => {
+        const coincideFiltro =
+          filtroDeporte ===
+            'Todos' ||
+          ev.deporte ===
+            filtroDeporte;
 
 
-      // Búsqueda por título o lugar.
-      const coincideBusqueda =
-        ev.titulo
-          .toLowerCase()
-          .includes(
-            busqueda.toLowerCase()
-          ) ||
-        ev.lugar
-          .toLowerCase()
-          .includes(
-            busqueda.toLowerCase()
+        const textoBusqueda =
+          busqueda
+            .trim()
+            .toLowerCase();
+
+
+        const coincideBusqueda =
+          ev.titulo
+            .toLowerCase()
+            .includes(
+              textoBusqueda
+            ) ||
+          ev.lugar
+            .toLowerCase()
+            .includes(
+              textoBusqueda
+            );
+
+
+        if (
+          vista ===
+          'mis_eventos'
+        ) {
+          return (
+            (
+              ev.unido ||
+              ev.esMio
+            ) &&
+            coincideFiltro &&
+            coincideBusqueda
           );
+        }
 
 
-      // En "Mis Partidos" mostramos:
-      // - eventos creados por el usuario;
-      // - eventos donde está inscrito.
-      if (
-        vista ===
-        'mis_eventos'
-      ) {
         return (
-          (
-            ev.unido ||
-            ev.esMio
-          ) &&
           coincideFiltro &&
           coincideBusqueda
         );
       }
-
-
-      return (
-        coincideFiltro &&
-        coincideBusqueda
-      );
-    });
+    );
 
 
   // ==========================================================
@@ -860,7 +1033,9 @@ export default function EventosScreen() {
           placeholderTextColor={
             colors.secondaryText
           }
-          value={busqueda}
+          value={
+            busqueda
+          }
           onChangeText={
             setBusqueda
           }
@@ -868,7 +1043,7 @@ export default function EventosScreen() {
 
 
         {/* ==================================================
-            FILTROS POR DEPORTE
+            FILTROS DE DEPORTE
         ================================================== */}
 
         <ScrollView
@@ -886,58 +1061,64 @@ export default function EventosScreen() {
             'Pádel',
             'Tenis',
             'Básquet',
-          ].map((dep) => {
-            const activo =
-              filtroDeporte ===
-              dep;
+          ].map(
+            (
+              dep
+            ) => {
+              const activo =
+                filtroDeporte ===
+                dep;
 
 
-            return (
-              <TouchableOpacity
-                key={dep}
-                style={[
-                  styles.chip,
-                  {
-                    backgroundColor:
-                      activo
-                        ? colors.primary
-                        : isDark
-                        ? '#334155'
-                        : '#E2E8F0',
-
-                    borderColor:
-                      activo
-                        ? colors.primary
-                        : colors.border,
-                  },
-                ]}
-                onPress={() =>
-                  setFiltroDeporte(
+              return (
+                <TouchableOpacity
+                  key={
                     dep
-                  )
-                }
-              >
-                <Text
+                  }
                   style={[
-                    styles.chipText,
+                    styles.chip,
                     {
-                      color:
+                      backgroundColor:
                         activo
-                          ? '#FFFFFF'
-                          : colors.secondaryText,
+                          ? colors.primary
+                          : isDark
+                          ? '#334155'
+                          : '#E2E8F0',
 
-                      fontWeight:
+                      borderColor:
                         activo
-                          ? 'bold'
-                          : '600',
+                          ? colors.primary
+                          : colors.border,
                     },
                   ]}
+                  onPress={() =>
+                    setFiltroDeporte(
+                      dep
+                    )
+                  }
                 >
-                  {dep}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+                  <Text
+                    style={[
+                      styles.chipText,
+                      {
+                        color:
+                          activo
+                            ? '#FFFFFF'
+                            : colors.secondaryText,
+
+                        fontWeight:
+                          activo
+                            ? 'bold'
+                            : '600',
+                      },
+                    ]}
+                  >
+                    {dep}
+                  </Text>
+                </TouchableOpacity>
+              );
+            }
+          )}
         </ScrollView>
 
 
@@ -1073,7 +1254,8 @@ export default function EventosScreen() {
               false
             }
             contentContainerStyle={{
-              paddingBottom: 80,
+              paddingBottom:
+                80,
             }}
           >
             {eventosFiltrados.length ===
@@ -1091,7 +1273,9 @@ export default function EventosScreen() {
               </Text>
             ) : (
               eventosFiltrados.map(
-                (item) => (
+                (
+                  item
+                ) => (
                   <View
                     key={
                       item.id
@@ -1107,7 +1291,7 @@ export default function EventosScreen() {
                       },
                     ]}
                   >
-                    {/* Cabecera */}
+                    {/* CABECERA */}
 
                     <View
                       style={
@@ -1145,7 +1329,7 @@ export default function EventosScreen() {
                     </View>
 
 
-                    {/* Título */}
+                    {/* TÍTULO */}
 
                     <Text
                       style={[
@@ -1160,7 +1344,7 @@ export default function EventosScreen() {
                     </Text>
 
 
-                    {/* Lugar */}
+                    {/* LUGAR */}
 
                     <Text
                       style={[
@@ -1175,7 +1359,7 @@ export default function EventosScreen() {
                     </Text>
 
 
-                    {/* Fecha */}
+                    {/* FECHA */}
 
                     <Text
                       style={[
@@ -1191,7 +1375,39 @@ export default function EventosScreen() {
 
 
                     {/* ========================================
-                        EVENTO CREADO POR EL USUARIO
+                        VER DETALLE
+                    ======================================== */}
+
+                    <TouchableOpacity
+                      style={[
+                        styles.detailButton,
+                        {
+                          borderColor:
+                            colors.primary,
+                        },
+                      ]}
+                      onPress={() =>
+                        abrirDetalleEvento(
+                          item.id
+                        )
+                      }
+                    >
+                      <Text
+                        style={[
+                          styles.detailButtonText,
+                          {
+                            color:
+                              colors.primary,
+                          },
+                        ]}
+                      >
+                        Ver detalle
+                      </Text>
+                    </TouchableOpacity>
+
+
+                    {/* ========================================
+                        EVENTO PROPIO
                     ======================================== */}
 
                     {item.esMio ? (
@@ -1223,7 +1439,7 @@ export default function EventosScreen() {
                     ) : item.unido ? (
                       <>
                         {/* ====================================
-                            YA ESTÁ INSCRITO
+                            YA INSCRITO
                         ==================================== */}
 
                         <View
@@ -1252,8 +1468,6 @@ export default function EventosScreen() {
                           </Text>
                         </View>
 
-
-                        {/* Cancelar participación */}
 
                         <TouchableOpacity
                           style={[
@@ -1405,7 +1619,9 @@ export default function EventosScreen() {
             },
           ]}
           onPress={() =>
-            setModalCrear(true)
+            setModalCrear(
+              true
+            )
           }
         >
           <Text
@@ -1419,7 +1635,7 @@ export default function EventosScreen() {
 
 
         {/* ==================================================
-            MODAL PARA CREAR EVENTO
+            MODAL CREAR EVENTO
         ================================================== */}
 
         <Modal
@@ -1429,7 +1645,9 @@ export default function EventosScreen() {
           animationType="slide"
           transparent
           onRequestClose={() =>
-            setModalCrear(false)
+            setModalCrear(
+              false
+            )
           }
         >
           <View
@@ -1446,7 +1664,7 @@ export default function EventosScreen() {
                 },
               ]}
             >
-              {/* Header */}
+              {/* HEADER MODAL */}
 
               <View
                 style={
@@ -1464,6 +1682,7 @@ export default function EventosScreen() {
                 >
                   Crear Nuevo Partido
                 </Text>
+
 
                 <TouchableOpacity
                   onPress={() =>
@@ -1487,7 +1706,7 @@ export default function EventosScreen() {
               </View>
 
 
-              {/* Título */}
+              {/* TÍTULO */}
 
               <TextInput
                 style={[
@@ -1516,7 +1735,7 @@ export default function EventosScreen() {
               />
 
 
-              {/* Selector de deporte */}
+              {/* DEPORTE */}
 
               <View
                 style={
@@ -1528,63 +1747,68 @@ export default function EventosScreen() {
                   'Pádel',
                   'Tenis',
                   'Básquet',
-                ].map((dep) => {
-                  const activo =
-                    deporte === dep;
+                ].map(
+                  (
+                    dep
+                  ) => {
+                    const activo =
+                      deporte ===
+                      dep;
 
 
-                  return (
-                    <TouchableOpacity
-                      key={
-                        dep
-                      }
-                      style={[
-                        styles.depChip,
-                        {
-                          backgroundColor:
-                            activo
-                              ? colors.primary
-                              : isDark
-                              ? '#334155'
-                              : '#E2E8F0',
-
-                          borderColor:
-                            activo
-                              ? colors.primary
-                              : colors.border,
-                        },
-                      ]}
-                      onPress={() =>
-                        setDeporte(
+                    return (
+                      <TouchableOpacity
+                        key={
                           dep
-                        )
-                      }
-                    >
-                      <Text
+                        }
                         style={[
-                          styles.depChipText,
+                          styles.depChip,
                           {
-                            color:
+                            backgroundColor:
                               activo
-                                ? '#FFFFFF'
-                                : colors.secondaryText,
+                                ? colors.primary
+                                : isDark
+                                ? '#334155'
+                                : '#E2E8F0',
 
-                            fontWeight:
+                            borderColor:
                               activo
-                                ? 'bold'
-                                : '500',
+                                ? colors.primary
+                                : colors.border,
                           },
                         ]}
+                        onPress={() =>
+                          setDeporte(
+                            dep
+                          )
+                        }
                       >
-                        {dep}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+                        <Text
+                          style={[
+                            styles.depChipText,
+                            {
+                              color:
+                                activo
+                                  ? '#FFFFFF'
+                                  : colors.secondaryText,
+
+                              fontWeight:
+                                activo
+                                  ? 'bold'
+                                  : '500',
+                            },
+                          ]}
+                        >
+                          {dep}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  }
+                )}
               </View>
 
 
-              {/* Lugar */}
+              {/* LUGAR */}
 
               <TextInput
                 style={[
@@ -1613,7 +1837,7 @@ export default function EventosScreen() {
               />
 
 
-              {/* Fecha */}
+              {/* FECHA */}
 
               <TextInput
                 style={[
@@ -1642,7 +1866,7 @@ export default function EventosScreen() {
               />
 
 
-              {/* Cupos */}
+              {/* CUPOS */}
 
               <TextInput
                 style={[
@@ -1672,7 +1896,7 @@ export default function EventosScreen() {
               />
 
 
-              {/* Publicar */}
+              {/* PUBLICAR */}
 
               <TouchableOpacity
                 style={[
@@ -1721,354 +1945,529 @@ export default function EventosScreen() {
 // ESTILOS
 // ============================================================
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-
-
-  container: {
-    flex: 1,
-    padding: 16,
-  },
-
-
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 12,
-  },
-
-
-  searchInput: {
-    borderWidth: 1,
-    padding: 12,
-    borderRadius: 10,
-    fontSize: 14,
-    marginBottom: 12,
-  },
-
-
-  categories: {
-    flexDirection: 'row',
-    maxHeight: 36,
-    marginBottom: 14,
-  },
-
-
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginRight: 8,
-    height: 32,
-    borderWidth: 1,
-  },
-
-
-  chipText: {
-    fontSize: 13,
-  },
-
-
-  tabHeader: {
-    flexDirection: 'row',
-    borderRadius: 10,
-    padding: 3,
-    marginBottom: 14,
-    borderWidth: 1,
-  },
-
-
-  tabButton: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-
-
-  tabText: {
-    fontSize: 13,
-  },
-
-
-  // ==========================================================
-  // CARGA
-  // ==========================================================
-
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 12,
-  },
-
-
-  loadingText: {
-    fontSize: 14,
-  },
-
-
-  // ==========================================================
-  // EVENTOS
-  // ==========================================================
-
-  eventCard: {
-    padding: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    marginBottom: 12,
-    gap: 4,
-  },
-
-
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent:
-      'space-between',
-    alignItems: 'center',
-    gap: 8,
-  },
-
-
-  eventTag: {
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-
-
-  eventSlots: {
-    fontSize: 12,
-    color: '#16A34A',
-    fontWeight: 'bold',
-  },
-
-
-  eventTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-
-
-  eventDetails: {
-    fontSize: 13,
-  },
-
-
-  // ==========================================================
-  // BOTÓN UNIRSE
-  // ==========================================================
-
-  joinBtn: {
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 8,
-    borderWidth: 1,
-  },
-
-
-  joinBtnText: {
-    fontWeight: 'bold',
-    fontSize: 13,
-  },
-
-
-  // ==========================================================
-  // INSCRIPCIÓN ACTIVA
-  // ==========================================================
-
-  joinedBadge: {
-    paddingVertical: 8,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-
-
-  joinedBadgeText: {
-    fontWeight: 'bold',
-    fontSize: 13,
-  },
-
-
-  // ==========================================================
-  // ORGANIZADOR
-  // ==========================================================
-
-  organizerBadge: {
-    paddingVertical: 8,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-
-
-  organizerBadgeText: {
-    fontWeight: 'bold',
-    fontSize: 13,
-  },
-
-
-  // ==========================================================
-  // CANCELAR PARTICIPACIÓN
-  // ==========================================================
-
-  cancelBtn: {
-    paddingVertical: 9,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 6,
-    borderWidth: 1,
-  },
-
-
-  cancelBtnText: {
-    fontWeight: '600',
-    fontSize: 13,
-  },
-
-
-  // ==========================================================
-  // EVENTO COMPLETO
-  // ==========================================================
-
-  fullBadge: {
-    paddingVertical: 8,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-
-
-  fullBadgeText: {
-    fontWeight: 'bold',
-    fontSize: 13,
-  },
-
-
-  emptyText: {
-    textAlign: 'center',
-    marginTop: 40,
-  },
-
-
-  // ==========================================================
-  // BOTÓN FLOTANTE
-  // ==========================================================
-
-  fab: {
-    position: 'absolute',
-    right: 20,
-    bottom: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 5,
-
-    shadowColor: '#000000',
-
-    shadowOffset: {
-      width: 0,
-      height: 3,
+const styles =
+  StyleSheet.create({
+    // ========================================================
+    // GENERAL
+    // ========================================================
+
+    safeArea: {
+      flex: 1,
     },
 
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-  },
+
+    container: {
+      flex: 1,
+
+      padding: 16,
+    },
 
 
-  fabText: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: 'bold',
-    lineHeight: 30,
-  },
+    headerTitle: {
+      fontSize: 24,
+
+      fontWeight:
+        'bold',
+
+      marginBottom: 12,
+    },
 
 
-  // ==========================================================
-  // MODAL
-  // ==========================================================
+    // ========================================================
+    // BUSCADOR
+    // ========================================================
 
-  modalOverlay: {
-    flex: 1,
-    backgroundColor:
-      'rgba(0,0,0,0.55)',
-    justifyContent:
-      'flex-end',
-  },
+    searchInput: {
+      borderWidth: 1,
 
+      padding: 12,
 
-  modalContent: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    gap: 12,
-  },
+      borderRadius: 10,
+
+      fontSize: 14,
+
+      marginBottom: 12,
+    },
 
 
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent:
-      'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
+    // ========================================================
+    // CATEGORÍAS
+    // ========================================================
+
+    categories: {
+      flexDirection:
+        'row',
+
+      maxHeight: 36,
+
+      marginBottom: 14,
+    },
 
 
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
+    chip: {
+      paddingHorizontal: 14,
+
+      paddingVertical: 6,
+
+      borderRadius: 20,
+
+      marginRight: 8,
+
+      height: 32,
+
+      borderWidth: 1,
+    },
 
 
-  closeButton: {
-    fontSize: 18,
-  },
+    chipText: {
+      fontSize: 13,
+    },
 
 
-  input: {
-    borderWidth: 1,
-    padding: 12,
-    borderRadius: 10,
-    fontSize: 14,
-  },
+    // ========================================================
+    // PESTAÑAS
+    // ========================================================
+
+    tabHeader: {
+      flexDirection:
+        'row',
+
+      borderRadius: 10,
+
+      padding: 3,
+
+      marginBottom: 14,
+
+      borderWidth: 1,
+    },
 
 
-  deporteSelector: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
+    tabButton: {
+      flex: 1,
+
+      paddingVertical: 8,
+
+      alignItems:
+        'center',
+
+      borderRadius: 8,
+    },
 
 
-  depChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
+    tabText: {
+      fontSize: 13,
+    },
 
 
-  depChipText: {
-    fontSize: 12,
-  },
+    // ========================================================
+    // CARGA
+    // ========================================================
+
+    loadingContainer: {
+      flex: 1,
+
+      justifyContent:
+        'center',
+
+      alignItems:
+        'center',
+
+      gap: 12,
+    },
 
 
-  primaryButton: {
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 8,
-  },
+    loadingText: {
+      fontSize: 14,
+    },
 
 
-  primaryButtonText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 15,
-  },
-});
+    // ========================================================
+    // EVENTOS
+    // ========================================================
+
+    eventCard: {
+      padding: 16,
+
+      borderRadius: 14,
+
+      borderWidth: 1,
+
+      marginBottom: 12,
+
+      gap: 4,
+    },
+
+
+    cardHeader: {
+      flexDirection:
+        'row',
+
+      justifyContent:
+        'space-between',
+
+      alignItems:
+        'center',
+
+      gap: 8,
+    },
+
+
+    eventTag: {
+      fontSize: 11,
+
+      fontWeight:
+        'bold',
+    },
+
+
+    eventSlots: {
+      fontSize: 12,
+
+      color:
+        '#16A34A',
+
+      fontWeight:
+        'bold',
+    },
+
+
+    eventTitle: {
+      fontSize: 16,
+
+      fontWeight:
+        'bold',
+    },
+
+
+    eventDetails: {
+      fontSize: 13,
+    },
+
+
+    // ========================================================
+    // VER DETALLE
+    // ========================================================
+
+    detailButton: {
+      paddingVertical: 9,
+
+      borderRadius: 8,
+
+      borderWidth: 1,
+
+      alignItems:
+        'center',
+
+      marginTop: 8,
+    },
+
+
+    detailButtonText: {
+      fontSize: 13,
+
+      fontWeight:
+        '700',
+    },
+
+
+    // ========================================================
+    // UNIRSE
+    // ========================================================
+
+    joinBtn: {
+      paddingVertical: 10,
+
+      borderRadius: 8,
+
+      alignItems:
+        'center',
+
+      marginTop: 8,
+
+      borderWidth: 1,
+    },
+
+
+    joinBtnText: {
+      fontWeight:
+        'bold',
+
+      fontSize: 13,
+    },
+
+
+    // ========================================================
+    // INSCRITO
+    // ========================================================
+
+    joinedBadge: {
+      paddingVertical: 8,
+
+      borderRadius: 8,
+
+      alignItems:
+        'center',
+
+      marginTop: 8,
+    },
+
+
+    joinedBadgeText: {
+      fontWeight:
+        'bold',
+
+      fontSize: 13,
+    },
+
+
+    // ========================================================
+    // ORGANIZADOR
+    // ========================================================
+
+    organizerBadge: {
+      paddingVertical: 8,
+
+      borderRadius: 8,
+
+      alignItems:
+        'center',
+
+      marginTop: 8,
+    },
+
+
+    organizerBadgeText: {
+      fontWeight:
+        'bold',
+
+      fontSize: 13,
+    },
+
+
+    // ========================================================
+    // CANCELAR
+    // ========================================================
+
+    cancelBtn: {
+      paddingVertical: 9,
+
+      borderRadius: 8,
+
+      alignItems:
+        'center',
+
+      marginTop: 6,
+
+      borderWidth: 1,
+    },
+
+
+    cancelBtnText: {
+      fontWeight:
+        '600',
+
+      fontSize: 13,
+    },
+
+
+    // ========================================================
+    // EVENTO LLENO
+    // ========================================================
+
+    fullBadge: {
+      paddingVertical: 8,
+
+      borderRadius: 8,
+
+      alignItems:
+        'center',
+
+      marginTop: 8,
+    },
+
+
+    fullBadgeText: {
+      fontWeight:
+        'bold',
+
+      fontSize: 13,
+    },
+
+
+    emptyText: {
+      textAlign:
+        'center',
+
+      marginTop: 40,
+    },
+
+
+    // ========================================================
+    // BOTÓN FLOTANTE
+    // ========================================================
+
+    fab: {
+      position:
+        'absolute',
+
+      right: 20,
+
+      bottom: 20,
+
+      width: 56,
+
+      height: 56,
+
+      borderRadius: 28,
+
+      justifyContent:
+        'center',
+
+      alignItems:
+        'center',
+
+      elevation: 5,
+
+      shadowColor:
+        '#000000',
+
+      shadowOffset: {
+        width: 0,
+
+        height: 3,
+      },
+
+      shadowOpacity: 0.2,
+
+      shadowRadius: 5,
+    },
+
+
+    fabText: {
+      color:
+        '#FFFFFF',
+
+      fontSize: 28,
+
+      fontWeight:
+        'bold',
+
+      lineHeight: 30,
+    },
+
+
+    // ========================================================
+    // MODAL
+    // ========================================================
+
+    modalOverlay: {
+      flex: 1,
+
+      backgroundColor:
+        'rgba(0,0,0,0.55)',
+
+      justifyContent:
+        'flex-end',
+    },
+
+
+    modalContent: {
+      borderTopLeftRadius:
+        20,
+
+      borderTopRightRadius:
+        20,
+
+      padding: 20,
+
+      gap: 12,
+    },
+
+
+    modalHeader: {
+      flexDirection:
+        'row',
+
+      justifyContent:
+        'space-between',
+
+      alignItems:
+        'center',
+
+      marginBottom: 6,
+    },
+
+
+    modalTitle: {
+      fontSize: 18,
+
+      fontWeight:
+        'bold',
+    },
+
+
+    closeButton: {
+      fontSize: 18,
+    },
+
+
+    input: {
+      borderWidth: 1,
+
+      padding: 12,
+
+      borderRadius: 10,
+
+      fontSize: 14,
+    },
+
+
+    deporteSelector: {
+      flexDirection:
+        'row',
+
+      flexWrap:
+        'wrap',
+
+      gap: 6,
+    },
+
+
+    depChip: {
+      paddingHorizontal: 12,
+
+      paddingVertical: 6,
+
+      borderRadius: 16,
+
+      borderWidth: 1,
+    },
+
+
+    depChipText: {
+      fontSize: 12,
+    },
+
+
+    primaryButton: {
+      paddingVertical: 14,
+
+      borderRadius: 10,
+
+      alignItems:
+        'center',
+
+      marginTop: 8,
+    },
+
+
+    primaryButtonText: {
+      color:
+        '#FFFFFF',
+
+      fontWeight:
+        'bold',
+
+      fontSize: 15,
+    },
+  });
