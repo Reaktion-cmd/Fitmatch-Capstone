@@ -1,25 +1,29 @@
 // ============================================================
-// FITMATCH - CONVERSACIÓN PRIVADA
+// FITMATCH - CONVERSACIÓN PRIVADA EN TIEMPO REAL
 // ============================================================
+//
 // Esta pantalla:
 //
 // - Recibe el ID de un Match.
 // - Comprueba que el usuario pertenece al Match.
 // - Obtiene el perfil de la otra persona.
-// - Carga los mensajes guardados en Supabase.
-// - Permite enviar nuevos mensajes.
-// - Los mensajes quedan persistidos en public.messages.
+// - Carga mensajes existentes desde Supabase.
+// - Permite enviar mensajes.
+// - Escucha mensajes nuevos mediante Supabase Realtime.
+// - Los mensajes aparecen sin recargar la pantalla.
 //
 // Tablas utilizadas:
 //
 // public.matches
 // public.profiles
 // public.messages
+//
 // ============================================================
 
 import React, {
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from 'react';
 
@@ -79,9 +83,22 @@ export default function ConversacionScreen() {
 
 
   const {
-    isDark,
     colors,
   } = useTheme();
+
+
+  // ==========================================================
+  // REFERENCIA DEL FLATLIST
+  // ==========================================================
+  //
+  // Nos permite mover automáticamente el chat hacia abajo
+  // cuando llega un mensaje nuevo.
+  // ==========================================================
+
+  const listaRef =
+    useRef<FlatList<Mensaje>>(
+      null
+    );
 
 
   // ==========================================================
@@ -137,6 +154,99 @@ export default function ConversacionScreen() {
 
 
   // ==========================================================
+  // AGREGAR MENSAJE SIN DUPLICAR
+  // ==========================================================
+  //
+  // Esto es importante porque:
+  //
+  // - El usuario que envía recibe la respuesta del INSERT.
+  // - Realtime también puede entregar ese mismo mensaje.
+  //
+  // Aquí evitamos que aparezca dos veces.
+  // ==========================================================
+
+  const agregarMensajeSiNoExiste =
+    useCallback(
+      (
+        nuevo: Mensaje
+      ) => {
+        setMensajes(
+          (
+            mensajesActuales
+          ) => {
+            const yaExiste =
+              mensajesActuales.some(
+                (mensaje) =>
+                  mensaje.id ===
+                  nuevo.id
+              );
+
+
+            if (yaExiste) {
+              return mensajesActuales;
+            }
+
+
+            return [
+              ...mensajesActuales,
+              nuevo,
+            ];
+          }
+        );
+      },
+      []
+    );
+
+
+  // ==========================================================
+  // CARGAR MENSAJES
+  // ==========================================================
+
+  const cargarMensajes =
+    useCallback(
+      async (
+        idMatch: string
+      ) => {
+        const {
+          data,
+          error,
+        } = await supabase
+          .from('messages')
+          .select(
+            `
+            id,
+            match_id,
+            sender_id,
+            content,
+            created_at
+            `
+          )
+          .eq(
+            'match_id',
+            idMatch
+          )
+          .order(
+            'created_at',
+            {
+              ascending: true,
+            }
+          );
+
+
+        if (error) {
+          throw error;
+        }
+
+
+        setMensajes(
+          data ?? []
+        );
+      },
+      []
+    );
+
+
+  // ==========================================================
   // CARGAR CONVERSACIÓN
   // ==========================================================
 
@@ -153,12 +263,15 @@ export default function ConversacionScreen() {
 
 
           // --------------------------------------------------
-          // 1. OBTENER USUARIO AUTENTICADO
+          // 1. USUARIO AUTENTICADO
           // --------------------------------------------------
 
           const {
-            data: { user },
-            error: userError,
+            data: {
+              user,
+            },
+            error:
+              userError,
           } =
             await supabase.auth.getUser();
 
@@ -174,9 +287,11 @@ export default function ConversacionScreen() {
               'Debes iniciar sesión nuevamente.'
             );
 
+
             router.replace(
               '/login'
             );
+
 
             return;
           }
@@ -188,16 +303,17 @@ export default function ConversacionScreen() {
 
 
           // --------------------------------------------------
-          // 2. OBTENER MATCH
+          // 2. OBTENER EL MATCH
           // --------------------------------------------------
           //
-          // Gracias a RLS, solamente podremos consultar
-          // Matches donde participa el usuario.
+          // RLS solamente permite acceder a Matches
+          // donde participe el usuario autenticado.
           // --------------------------------------------------
 
           const {
             data: match,
-            error: matchError,
+            error:
+              matchError,
           } = await supabase
             .from('matches')
             .select(
@@ -225,7 +341,9 @@ export default function ConversacionScreen() {
               'No se encontró este Match.'
             );
 
+
             router.back();
+
 
             return;
           }
@@ -248,7 +366,8 @@ export default function ConversacionScreen() {
 
           const {
             data: perfil,
-            error: perfilError,
+            error:
+              perfilError,
           } = await supabase
             .from('profiles')
             .select(
@@ -276,13 +395,15 @@ export default function ConversacionScreen() {
 
 
           // --------------------------------------------------
-          // 5. CARGAR MENSAJES
+          // 5. CARGAR MENSAJES EXISTENTES
           // --------------------------------------------------
 
           await cargarMensajes(
             matchIdActual
           );
-        } catch (error: any) {
+        } catch (
+          error: any
+        ) {
           console.log(
             'Error cargando conversación:',
             error
@@ -301,62 +422,118 @@ export default function ConversacionScreen() {
       [
         matchIdActual,
         router,
+        cargarMensajes,
       ]
     );
 
 
   // ==========================================================
-  // CARGAR MENSAJES
-  // ==========================================================
-
-  async function cargarMensajes(
-    idMatch: string
-  ) {
-    const {
-      data,
-      error,
-    } = await supabase
-      .from('messages')
-      .select(
-        `
-        id,
-        match_id,
-        sender_id,
-        content,
-        created_at
-        `
-      )
-      .eq(
-        'match_id',
-        idMatch
-      )
-      .order(
-        'created_at',
-        {
-          ascending: true,
-        }
-      );
-
-
-    if (error) {
-      throw error;
-    }
-
-
-    setMensajes(
-      data ?? []
-    );
-  }
-
-
-  // ==========================================================
-  // CARGAR AL ENTRAR
+  // CARGAR CONVERSACIÓN AL ENTRAR
   // ==========================================================
 
   useEffect(() => {
     cargarConversacion();
   }, [
     cargarConversacion,
+  ]);
+
+
+  // ==========================================================
+  // SUPABASE REALTIME
+  // ==========================================================
+  //
+  // Esta es la parte nueva.
+  //
+  // Escuchamos únicamente INSERTS realizados en:
+  //
+  // public.messages
+  //
+  // y únicamente los que tengan:
+  //
+  // match_id = matchIdActual
+  //
+  // Así, un mensaje de otra conversación no aparece aquí.
+  // ==========================================================
+
+  useEffect(() => {
+    if (!matchIdActual) {
+      return;
+    }
+
+
+    // --------------------------------------------------------
+    // CREAR CANAL REALTIME
+    // --------------------------------------------------------
+
+    const canal =
+      supabase
+        .channel(
+          `fitmatch-chat-${matchIdActual}`
+        )
+        .on(
+          'postgres_changes',
+          {
+            event:
+              'INSERT',
+
+            schema:
+              'public',
+
+            table:
+              'messages',
+
+            filter:
+              `match_id=eq.${matchIdActual}`,
+          },
+          (
+            payload
+          ) => {
+            // El registro recién insertado viene en payload.new.
+
+            const mensajeNuevo =
+              payload.new as Mensaje;
+
+
+            console.log(
+              'Mensaje recibido en tiempo real:',
+              mensajeNuevo
+            );
+
+
+            // Agregamos evitando duplicados.
+            agregarMensajeSiNoExiste(
+              mensajeNuevo
+            );
+          }
+        )
+        .subscribe(
+          (
+            estado
+          ) => {
+            console.log(
+              'Estado Realtime:',
+              estado
+            );
+          }
+        );
+
+
+    // --------------------------------------------------------
+    // LIMPIEZA
+    // --------------------------------------------------------
+    //
+    // Cuando salimos del chat eliminamos la suscripción.
+    // Esto evita dejar conexiones Realtime innecesarias.
+    // --------------------------------------------------------
+
+    return () => {
+      supabase.removeChannel(
+        canal
+      );
+    };
+  }, [
+    matchIdActual,
+    agregarMensajeSiNoExiste,
   ]);
 
 
@@ -369,13 +546,13 @@ export default function ConversacionScreen() {
       nuevoMensaje.trim();
 
 
-    // No enviar mensajes vacíos.
+    // No enviamos texto vacío.
     if (!contenido) {
       return;
     }
 
 
-    // Protección adicional.
+    // Protección.
     if (
       !matchIdActual ||
       !usuarioActualId
@@ -389,7 +566,7 @@ export default function ConversacionScreen() {
 
 
       // ------------------------------------------------------
-      // INSERTAR MENSAJE
+      // INSERTAR MENSAJE EN SUPABASE
       // ------------------------------------------------------
 
       const {
@@ -425,28 +602,30 @@ export default function ConversacionScreen() {
 
 
       // ------------------------------------------------------
-      // LIMPIAR INPUT
+      // LIMPIAR CAMPO DE TEXTO
       // ------------------------------------------------------
 
       setNuevoMensaje('');
 
 
       // ------------------------------------------------------
-      // AGREGAR MENSAJE LOCALMENTE
+      // AGREGAR LOCALMENTE
       // ------------------------------------------------------
       //
-      // Así aparece inmediatamente sin esperar otra consulta.
+      // Así el mensaje aparece inmediatamente.
+      //
+      // Si Realtime entrega luego el mismo mensaje,
+      // agregarMensajeSiNoExiste() evitará duplicarlo.
       // ------------------------------------------------------
 
       if (data) {
-        setMensajes(
-          (mensajesActuales) => [
-            ...mensajesActuales,
-            data,
-          ]
+        agregarMensajeSiNoExiste(
+          data as Mensaje
         );
       }
-    } catch (error: any) {
+    } catch (
+      error: any
+    ) {
       console.log(
         'Error enviando mensaje:',
         error
@@ -460,6 +639,32 @@ export default function ConversacionScreen() {
       );
     } finally {
       setEnviando(false);
+    }
+  }
+
+
+  // ==========================================================
+  // FORMATEAR HORA
+  // ==========================================================
+
+  function obtenerHora(
+    fecha: string
+  ) {
+    try {
+      return new Date(
+        fecha
+      ).toLocaleTimeString(
+        [],
+        {
+          hour:
+            '2-digit',
+
+          minute:
+            '2-digit',
+        }
+      );
+    } catch {
+      return '';
     }
   }
 
@@ -490,6 +695,7 @@ export default function ConversacionScreen() {
               colors.primary
             }
           />
+
 
           <Text
             style={[
@@ -549,7 +755,7 @@ export default function ConversacionScreen() {
             },
           ]}
         >
-          {/* Volver */}
+          {/* VOLVER */}
 
           <TouchableOpacity
             style={
@@ -573,7 +779,7 @@ export default function ConversacionScreen() {
           </TouchableOpacity>
 
 
-          {/* Avatar */}
+          {/* AVATAR */}
 
           <View
             style={[
@@ -597,7 +803,7 @@ export default function ConversacionScreen() {
           </View>
 
 
-          {/* Nombre */}
+          {/* USUARIO */}
 
           <View
             style={
@@ -617,6 +823,7 @@ export default function ConversacionScreen() {
               {nombreOtroUsuario}
             </Text>
 
+
             <Text
               style={[
                 styles.headerSubtitle,
@@ -633,24 +840,44 @@ export default function ConversacionScreen() {
 
 
         {/* ==================================================
-            MENSAJES
+            LISTA DE MENSAJES
         ================================================== */}
 
         <FlatList
+          ref={
+            listaRef
+          }
           data={
             mensajes
           }
           keyExtractor={(
             item
-          ) => item.id}
-          contentContainerStyle={
-            mensajes.length === 0
-              ? styles.emptyMessagesContainer
-              : styles.messagesContainer
+          ) =>
+            item.id
           }
           showsVerticalScrollIndicator={
             false
           }
+
+          // Al cambiar el contenido bajamos al último mensaje.
+          onContentSizeChange={() => {
+            if (
+              mensajes.length >
+              0
+            ) {
+              listaRef.current?.scrollToEnd({
+                animated: true,
+              });
+            }
+          }}
+
+          contentContainerStyle={
+            mensajes.length ===
+            0
+              ? styles.emptyMessagesContainer
+              : styles.messagesContainer
+          }
+
           renderItem={({
             item,
           }) => {
@@ -686,6 +913,8 @@ export default function ConversacionScreen() {
                     },
                   ]}
                 >
+                  {/* MENSAJE */}
+
                   <Text
                     style={[
                       styles.messageText,
@@ -699,10 +928,34 @@ export default function ConversacionScreen() {
                   >
                     {item.content}
                   </Text>
+
+
+                  {/* HORA */}
+
+                  <Text
+                    style={[
+                      styles.messageTime,
+                      {
+                        color:
+                          esMio
+                            ? 'rgba(255,255,255,0.75)'
+                            : colors.secondaryText,
+                      },
+                    ]}
+                  >
+                    {obtenerHora(
+                      item.created_at
+                    )}
+                  </Text>
                 </View>
               </View>
             );
           }}
+
+          // ==================================================
+          // CHAT SIN MENSAJES
+          // ==================================================
+
           ListEmptyComponent={
             <View
               style={
@@ -717,6 +970,7 @@ export default function ConversacionScreen() {
                 👋
               </Text>
 
+
               <Text
                 style={[
                   styles.emptyTitle,
@@ -728,6 +982,7 @@ export default function ConversacionScreen() {
               >
                 ¡Hicieron Match!
               </Text>
+
 
               <Text
                 style={[
@@ -747,7 +1002,7 @@ export default function ConversacionScreen() {
 
 
         {/* ==================================================
-            INPUT DEL MENSAJE
+            INPUT DE MENSAJE
         ================================================== */}
 
         <View
@@ -790,6 +1045,8 @@ export default function ConversacionScreen() {
             maxLength={1000}
           />
 
+
+          {/* BOTÓN ENVIAR */}
 
           <TouchableOpacity
             style={[
@@ -841,6 +1098,10 @@ export default function ConversacionScreen() {
 
 const styles =
   StyleSheet.create({
+    // ========================================================
+    // GENERAL
+    // ========================================================
+
     safeArea: {
       flex: 1,
     },
@@ -915,7 +1176,8 @@ const styles =
 
       lineHeight: 38,
 
-      fontWeight: '300',
+      fontWeight:
+        '300',
     },
 
 
@@ -951,7 +1213,8 @@ const styles =
     headerName: {
       fontSize: 16,
 
-      fontWeight: '700',
+      fontWeight:
+        '700',
     },
 
 
@@ -1024,6 +1287,15 @@ const styles =
     },
 
 
+    messageTime: {
+      fontSize: 9,
+
+      marginTop: 4,
+
+      textAlign: 'right',
+    },
+
+
     // ========================================================
     // CHAT VACÍO
     // ========================================================
@@ -1047,7 +1319,8 @@ const styles =
     emptyTitle: {
       fontSize: 18,
 
-      fontWeight: '700',
+      fontWeight:
+        '700',
 
       textAlign:
         'center',
@@ -1129,6 +1402,7 @@ const styles =
 
       fontSize: 19,
 
-      fontWeight: 'bold',
+      fontWeight:
+        'bold',
     },
   });
