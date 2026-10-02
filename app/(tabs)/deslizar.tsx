@@ -1,15 +1,28 @@
 // ============================================================
 // FITMATCH - MATCH DEPORTIVO 1V1
 // ============================================================
+//
 // Esta pantalla:
 //
 // - Obtiene perfiles reales desde Supabase.
 // - Nunca muestra al usuario autenticado.
 // - No vuelve a mostrar perfiles que ya recibieron Like o Pass.
+// - Prioriza perfiles con deportes en común.
+// - Como criterio secundario considera el nivel deportivo.
 // - ❌ registra un "pass".
 // - 💚 registra un "like".
 // - Si ambos usuarios se dieron Like, Supabase crea un Match.
 // - Mantiene compatibilidad con modo claro / oscuro.
+//
+// IMPORTANTE:
+//
+// El puntaje utilizado NO es un porcentaje de compatibilidad.
+// Solamente sirve para ordenar los perfiles.
+//
+// Regla interna:
+//
+// +10 puntos por cada deporte en común.
+// +2 puntos si ambos tienen el mismo nivel.
 //
 // Tablas utilizadas:
 //
@@ -20,6 +33,7 @@
 // Función utilizada:
 //
 // public.register_swipe(...)
+//
 // ============================================================
 
 import React, {
@@ -63,14 +77,22 @@ interface PerfilMatch {
   sports: string[] | null;
 
   skill_level: string | null;
+
+
+  // ==========================================================
+  // DATOS CALCULADOS PARA MATCH
+  // ==========================================================
+
+  deportesEnComun: string[];
+
+  mismoNivel: boolean;
+
+  puntajeOrden: number;
 }
 
 
 // ============================================================
 // CATÁLOGO DE DEPORTES
-// ============================================================
-// Los IDs coinciden con los valores guardados actualmente
-// en profiles.sports.
 // ============================================================
 
 const DEPORTES_DISPONIBLES = [
@@ -131,6 +153,7 @@ const DEPORTES_DISPONIBLES = [
 export default function MatchScreen() {
   const router = useRouter();
 
+
   const {
     isDark,
     colors,
@@ -141,21 +164,18 @@ export default function MatchScreen() {
   // ESTADOS
   // ==========================================================
 
-  // Perfiles disponibles para Match.
   const [
     perfiles,
     setPerfiles,
   ] = useState<PerfilMatch[]>([]);
 
 
-  // Estado mientras consultamos Supabase.
   const [
     cargando,
     setCargando,
   ] = useState(true);
 
 
-  // Estado mientras registramos Like / Pass.
   const [
     procesando,
     setProcesando,
@@ -166,10 +186,9 @@ export default function MatchScreen() {
   // PERFIL ACTUAL
   // ==========================================================
   //
-  // Siempre mostramos el primer perfil disponible.
+  // Los perfiles ya vienen ordenados por afinidad.
   //
-  // Al dar Like o Pass lo eliminamos de la lista y automáticamente
-  // aparece el siguiente.
+  // Por eso siempre mostramos perfiles[0].
   // ==========================================================
 
   const perfilActual =
@@ -179,7 +198,7 @@ export default function MatchScreen() {
 
 
   // ==========================================================
-  // CARGAR PERFILES AL ENTRAR A LA PANTALLA
+  // CARGAR PERFILES AL ENTRAR
   // ==========================================================
 
   useFocusEffect(
@@ -219,18 +238,77 @@ export default function MatchScreen() {
           'Debes iniciar sesión nuevamente.'
         );
 
+
         router.replace('/login');
+
 
         return;
       }
 
 
       // ------------------------------------------------------
-      // 2. OBTENER SWIPES QUE YA REALIZÓ EL USUARIO
+      // 2. OBTENER MI PERFIL
       // ------------------------------------------------------
       //
-      // Esto evita volver a mostrar perfiles a los que ya
-      // dimos Like o Pass.
+      // Necesitamos conocer:
+      //
+      // - mis deportes;
+      // - mi nivel.
+      //
+      // Con esos datos calcularemos la afinidad.
+      // ------------------------------------------------------
+
+      const {
+        data: miPerfil,
+        error: miPerfilError,
+      } = await supabase
+        .from('profiles')
+        .select(
+          `
+          sports,
+          skill_level
+          `
+        )
+        .eq(
+          'id',
+          user.id
+        )
+        .maybeSingle();
+
+
+      if (miPerfilError) {
+        throw miPerfilError;
+      }
+
+
+      // Deportes del usuario autenticado.
+
+      const misDeportes: string[] =
+        Array.isArray(
+          miPerfil?.sports
+        )
+          ? miPerfil.sports
+          : [];
+
+
+      // Nivel del usuario autenticado.
+
+      const miNivel: string | null =
+        miPerfil?.skill_level ??
+        null;
+
+
+      // ------------------------------------------------------
+      // 3. OBTENER SWIPES YA REALIZADOS
+      // ------------------------------------------------------
+      //
+      // Esto evita volver a mostrar perfiles que ya recibieron:
+      //
+      // Like
+      //
+      // o
+      //
+      // Pass
       // ------------------------------------------------------
 
       const {
@@ -238,7 +316,9 @@ export default function MatchScreen() {
         error: swipesError,
       } = await supabase
         .from('profile_swipes')
-        .select('target_id')
+        .select(
+          'target_id'
+        )
         .eq(
           'swiper_id',
           user.id
@@ -252,7 +332,10 @@ export default function MatchScreen() {
 
       const perfilesYaEvaluados =
         new Set(
-          (swipesData ?? []).map(
+          (
+            swipesData ??
+            []
+          ).map(
             (swipe) =>
               swipe.target_id
           )
@@ -260,10 +343,7 @@ export default function MatchScreen() {
 
 
       // ------------------------------------------------------
-      // 3. OBTENER PERFILES
-      // ------------------------------------------------------
-      //
-      // Excluimos al propio usuario.
+      // 4. OBTENER LOS OTROS PERFILES
       // ------------------------------------------------------
 
       const {
@@ -293,7 +373,7 @@ export default function MatchScreen() {
 
 
       // ------------------------------------------------------
-      // 4. QUITAR LOS PERFILES YA EVALUADOS
+      // 5. QUITAR PERFILES YA EVALUADOS
       // ------------------------------------------------------
 
       const perfilesDisponibles =
@@ -308,10 +388,187 @@ export default function MatchScreen() {
         );
 
 
-      setPerfiles(
-        perfilesDisponibles
+      // ------------------------------------------------------
+      // 6. CALCULAR AFINIDAD DEPORTIVA
+      // ------------------------------------------------------
+
+      const perfilesConAfinidad: PerfilMatch[] =
+        perfilesDisponibles.map(
+          (perfil) => {
+            // Deportes del candidato.
+
+            const deportesPerfil: string[] =
+              Array.isArray(
+                perfil.sports
+              )
+                ? perfil.sports
+                : [];
+
+
+            // ----------------------------------------------
+            // DEPORTES EN COMÚN
+            // ----------------------------------------------
+
+            const deportesEnComun =
+              misDeportes.filter(
+                (deporteId) =>
+                  deportesPerfil.includes(
+                    deporteId
+                  )
+              );
+
+
+            // ----------------------------------------------
+            // MISMO NIVEL
+            // ----------------------------------------------
+            //
+            // Solamente contamos como coincidencia si ambos
+            // tienen un nivel configurado.
+            // ----------------------------------------------
+
+            const mismoNivel =
+              Boolean(
+                miNivel &&
+                perfil.skill_level &&
+                miNivel ===
+                  perfil.skill_level
+              );
+
+
+            // ----------------------------------------------
+            // PUNTAJE INTERNO DE ORDEN
+            // ----------------------------------------------
+            //
+            // NO se muestra como porcentaje.
+            //
+            // Cada deporte compartido pesa mucho más que
+            // compartir solamente el nivel.
+            // ----------------------------------------------
+
+            const puntajeOrden =
+              (
+                deportesEnComun.length *
+                10
+              ) +
+              (
+                mismoNivel
+                  ? 2
+                  : 0
+              );
+
+
+            return {
+              id:
+                perfil.id,
+
+              full_name:
+                perfil.full_name,
+
+              age:
+                perfil.age,
+
+              bio:
+                perfil.bio,
+
+              sports:
+                perfil.sports,
+
+              skill_level:
+                perfil.skill_level,
+
+              deportesEnComun,
+
+              mismoNivel,
+
+              puntajeOrden,
+            };
+          }
+        );
+
+
+      // ------------------------------------------------------
+      // 7. ORDENAR POR AFINIDAD
+      // ------------------------------------------------------
+      //
+      // Mayor puntaje primero.
+      //
+      // Ejemplo:
+      //
+      // Persona A:
+      // 2 deportes comunes + mismo nivel = 22
+      //
+      // Persona B:
+      // 1 deporte común = 10
+      //
+      // Persona C:
+      // mismo nivel solamente = 2
+      //
+      // Persona D:
+      // sin coincidencias = 0
+      //
+      // Resultado:
+      //
+      // A → B → C → D
+      // ------------------------------------------------------
+
+      perfilesConAfinidad.sort(
+        (
+          perfilA,
+          perfilB
+        ) => {
+          // Primero:
+          // mayor puntaje.
+
+          if (
+            perfilB.puntajeOrden !==
+            perfilA.puntajeOrden
+          ) {
+            return (
+              perfilB.puntajeOrden -
+              perfilA.puntajeOrden
+            );
+          }
+
+
+          // Segundo criterio:
+          // cantidad de deportes compartidos.
+
+          if (
+            perfilB.deportesEnComun.length !==
+            perfilA.deportesEnComun.length
+          ) {
+            return (
+              perfilB.deportesEnComun.length -
+              perfilA.deportesEnComun.length
+            );
+          }
+
+
+          // Tercer criterio:
+          // nombre, simplemente para tener
+          // un resultado estable.
+
+          return (
+            perfilA.full_name ??
+            ''
+          ).localeCompare(
+            perfilB.full_name ??
+              ''
+          );
+        }
       );
-    } catch (error: any) {
+
+
+      // ------------------------------------------------------
+      // 8. GUARDAR PERFILES ORDENADOS
+      // ------------------------------------------------------
+
+      setPerfiles(
+        perfilesConAfinidad
+      );
+    } catch (
+      error: any
+    ) {
       console.log(
         'Error cargando perfiles:',
         error
@@ -347,8 +604,8 @@ export default function MatchScreen() {
     }
 
 
-    const nombres =
-      sports.map(
+    return sports
+      .map(
         (deporteId) => {
           const deporte =
             DEPORTES_DISPONIBLES.find(
@@ -365,12 +622,45 @@ export default function MatchScreen() {
 
           return `${deporte.icono} ${deporte.nombre}`;
         }
-      );
+      )
+      .join(' / ');
+  }
 
 
-    return nombres.join(
-      ' / '
-    );
+  // ==========================================================
+  // OBTENER DEPORTES EN COMÚN
+  // ==========================================================
+
+  function obtenerDeportesEnComun(
+    sports: string[]
+  ) {
+    if (
+      sports.length === 0
+    ) {
+      return '';
+    }
+
+
+    return sports
+      .map(
+        (deporteId) => {
+          const deporte =
+            DEPORTES_DISPONIBLES.find(
+              (item) =>
+                item.id ===
+                deporteId
+            );
+
+
+          if (!deporte) {
+            return deporteId;
+          }
+
+
+          return `${deporte.icono} ${deporte.nombre}`;
+        }
+      )
+      .join(' · ');
   }
 
 
@@ -381,7 +671,6 @@ export default function MatchScreen() {
   async function registrarDecision(
     decision: 'like' | 'pass'
   ) {
-    // Si no existe un perfil actual, no hacemos nada.
     if (!perfilActual) {
       return;
     }
@@ -392,14 +681,14 @@ export default function MatchScreen() {
 
 
       // ------------------------------------------------------
-      // LLAMAR FUNCIÓN DE SUPABASE
+      // LLAMAR RPC DE SUPABASE
       // ------------------------------------------------------
       //
       // register_swipe:
       //
       // - guarda Like o Pass;
-      // - comprueba si existe Like de vuelta;
-      // - crea Match automáticamente si corresponde.
+      // - comprueba Like recíproco;
+      // - crea Match si corresponde.
       // ------------------------------------------------------
 
       const {
@@ -423,17 +712,7 @@ export default function MatchScreen() {
 
 
       // ------------------------------------------------------
-      // COMPROBAR SI HUBO MATCH
-      // ------------------------------------------------------
-      //
-      // La función devuelve algo similar a:
-      //
-      // [
-      //   {
-      //     is_match: true,
-      //     match_id: "uuid..."
-      //   }
-      // ]
+      // COMPROBAR MATCH
       // ------------------------------------------------------
 
       const resultado =
@@ -450,12 +729,11 @@ export default function MatchScreen() {
       // ------------------------------------------------------
       // QUITAR PERFIL ACTUAL
       // ------------------------------------------------------
-      //
-      // El siguiente perfil aparecerá automáticamente.
-      // ------------------------------------------------------
 
       setPerfiles(
-        (perfilesActuales) =>
+        (
+          perfilesActuales
+        ) =>
           perfilesActuales.filter(
             (perfil) =>
               perfil.id !==
@@ -465,7 +743,7 @@ export default function MatchScreen() {
 
 
       // ------------------------------------------------------
-      // SI HUBO MATCH
+      // MATCH MUTUO
       // ------------------------------------------------------
 
       if (huboMatch) {
@@ -477,12 +755,13 @@ export default function MatchScreen() {
           } se dieron Me gusta mutuamente.`
         );
 
+
         return;
       }
 
 
       // ------------------------------------------------------
-      // LIKE SIN MATCH
+      // LIKE REGISTRADO SIN MATCH
       // ------------------------------------------------------
 
       if (
@@ -493,7 +772,9 @@ export default function MatchScreen() {
           'Like registrado correctamente.'
         );
       }
-    } catch (error: any) {
+    } catch (
+      error: any
+    ) {
       console.log(
         'Error registrando decisión:',
         error
@@ -538,6 +819,7 @@ export default function MatchScreen() {
             }
           />
 
+
           <Text
             style={[
               styles.loadingText,
@@ -547,7 +829,7 @@ export default function MatchScreen() {
               },
             ]}
           >
-            Buscando deportistas...
+            Buscando deportistas compatibles...
           </Text>
         </View>
       </SafeAreaView>
@@ -556,7 +838,7 @@ export default function MatchScreen() {
 
 
   // ==========================================================
-  // SIN PERFILES DISPONIBLES
+  // SIN PERFILES
   // ==========================================================
 
   if (!perfilActual) {
@@ -583,6 +865,7 @@ export default function MatchScreen() {
             🏅
           </Text>
 
+
           <Text
             style={[
               styles.emptyTitle,
@@ -594,6 +877,7 @@ export default function MatchScreen() {
           >
             No hay más perfiles por ahora
           </Text>
+
 
           <Text
             style={[
@@ -658,17 +942,36 @@ export default function MatchScreen() {
             TÍTULO
         ================================================== */}
 
-        <Text
-          style={[
-            styles.headerTitle,
-            {
-              color:
-                colors.text,
-            },
-          ]}
+        <View
+          style={
+            styles.headerContainer
+          }
         >
-          Match Deportivo 1v1
-        </Text>
+          <Text
+            style={[
+              styles.headerTitle,
+              {
+                color:
+                  colors.text,
+              },
+            ]}
+          >
+            Match Deportivo 1v1
+          </Text>
+
+
+          <Text
+            style={[
+              styles.headerSubtitle,
+              {
+                color:
+                  colors.secondaryText,
+              },
+            ]}
+          >
+            Perfiles priorizados según tus preferencias deportivas
+          </Text>
+        </View>
 
 
         {/* ==================================================
@@ -733,6 +1036,106 @@ export default function MatchScreen() {
           </Text>
 
 
+          {/* ==================================================
+              AFINIDAD
+          ================================================== */}
+
+          {perfilActual.deportesEnComun.length >
+          0 ? (
+            <View
+              style={[
+                styles.compatibilityBox,
+                {
+                  backgroundColor:
+                    colors.primarySoft,
+
+                  borderColor:
+                    colors.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.compatibilityTitle,
+                  {
+                    color:
+                      colors.primary,
+                  },
+                ]}
+              >
+                🎯{' '}
+                {
+                  perfilActual
+                    .deportesEnComun
+                    .length
+                }{' '}
+                {perfilActual
+                  .deportesEnComun
+                  .length === 1
+                  ? 'deporte en común'
+                  : 'deportes en común'}
+              </Text>
+
+
+              <Text
+                style={[
+                  styles.compatibilitySports,
+                  {
+                    color:
+                      colors.text,
+                  },
+                ]}
+              >
+                {obtenerDeportesEnComun(
+                  perfilActual.deportesEnComun
+                )}
+              </Text>
+
+
+              {perfilActual.mismoNivel && (
+                <Text
+                  style={[
+                    styles.sameLevelText,
+                    {
+                      color:
+                        colors.secondaryText,
+                    },
+                  ]}
+                >
+                  ✓ También tienen el mismo nivel deportivo
+                </Text>
+              )}
+            </View>
+          ) : (
+            <View
+              style={[
+                styles.compatibilityBox,
+                {
+                  backgroundColor:
+                    colors.card,
+
+                  borderColor:
+                    colors.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.noCommonSports,
+                  {
+                    color:
+                      colors.secondaryText,
+                  },
+                ]}
+              >
+                {perfilActual.mismoNivel
+                  ? '🎯 Mismo nivel deportivo, sin deportes en común configurados.'
+                  : 'Sin deportes en común configurados.'}
+              </Text>
+            </View>
+          )}
+
+
           {/* Deportes */}
 
           <Text
@@ -764,6 +1167,7 @@ export default function MatchScreen() {
             ]}
           >
             Nivel:{' '}
+
             {perfilActual.skill_level ??
               'No especificado'}
           </Text>
@@ -895,269 +1299,373 @@ export default function MatchScreen() {
 // ESTILOS
 // ============================================================
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-
-
-  container: {
-    flex: 1,
-
-    padding: 20,
-
-    justifyContent:
-      'space-between',
-
-    alignItems:
-      'center',
-  },
-
-
-  headerTitle: {
-    fontSize: 22,
-
-    fontWeight: 'bold',
-
-    marginTop: 10,
-
-    textAlign:
-      'center',
-  },
-
-
-  // ==========================================================
-  // CARGA
-  // ==========================================================
-
-  loadingContainer: {
-    flex: 1,
-
-    justifyContent:
-      'center',
-
-    alignItems:
-      'center',
-
-    gap: 12,
-  },
-
-
-  loadingText: {
-    fontSize: 14,
-  },
-
-
-  // ==========================================================
-  // TARJETA
-  // ==========================================================
-
-  card: {
-    width: '100%',
-
-    maxWidth: 520,
-
-    minHeight: '58%',
-
-    borderRadius: 20,
-
-    padding: 20,
-
-    alignItems:
-      'center',
-
-    justifyContent:
-      'center',
-
-    borderWidth: 1,
-
-    elevation: 4,
-
-    shadowColor:
-      '#000000',
-
-    shadowOffset: {
-      width: 0,
-      height: 2,
+const styles =
+  StyleSheet.create({
+    safeArea: {
+      flex: 1,
     },
 
-    shadowOpacity: 0.12,
 
-    shadowRadius: 5,
-  },
+    container: {
+      flex: 1,
 
+      padding: 20,
 
-  avatarPlaceholder: {
-    width: 110,
+      justifyContent:
+        'space-between',
 
-    height: 110,
+      alignItems:
+        'center',
+    },
 
-    borderRadius: 55,
 
-    justifyContent:
-      'center',
+    // ========================================================
+    // ENCABEZADO
+    // ========================================================
 
-    alignItems:
-      'center',
+    headerContainer: {
+      alignItems:
+        'center',
 
-    marginBottom: 16,
+      width: '100%',
+    },
 
-    borderWidth: 1,
-  },
 
+    headerTitle: {
+      fontSize: 22,
 
-  avatarEmoji: {
-    fontSize: 60,
-  },
+      fontWeight:
+        'bold',
 
+      marginTop: 10,
 
-  userName: {
-    fontSize: 22,
+      textAlign:
+        'center',
+    },
 
-    fontWeight: 'bold',
 
-    textAlign:
-      'center',
-  },
+    headerSubtitle: {
+      fontSize: 12,
 
+      marginTop: 5,
 
-  userSport: {
-    fontSize: 14,
+      textAlign:
+        'center',
+    },
 
-    fontWeight: '600',
 
-    marginTop: 8,
+    // ========================================================
+    // CARGA
+    // ========================================================
 
-    textAlign:
-      'center',
+    loadingContainer: {
+      flex: 1,
 
-    lineHeight: 21,
-  },
+      justifyContent:
+        'center',
 
+      alignItems:
+        'center',
 
-  userLevel: {
-    fontSize: 13,
+      gap: 12,
+    },
 
-    marginTop: 7,
 
-    fontWeight: '600',
-  },
+    loadingText: {
+      fontSize: 14,
+    },
 
 
-  userBio: {
-    fontSize: 14,
+    // ========================================================
+    // TARJETA
+    // ========================================================
 
-    textAlign:
-      'center',
+    card: {
+      width: '100%',
 
-    marginTop: 14,
+      maxWidth: 520,
 
-    paddingHorizontal: 10,
+      minHeight: '58%',
 
-    lineHeight: 20,
-  },
+      borderRadius: 20,
 
+      padding: 20,
 
-  // ==========================================================
-  // ACCIONES
-  // ==========================================================
+      alignItems:
+        'center',
 
-  actions: {
-    flexDirection:
-      'row',
+      justifyContent:
+        'center',
 
-    gap: 30,
+      borderWidth: 1,
 
-    marginBottom: 10,
-  },
+      elevation: 4,
 
+      shadowColor:
+        '#000000',
 
-  circleBtn: {
-    width: 65,
+      shadowOffset: {
+        width: 0,
+        height: 2,
+      },
 
-    height: 65,
+      shadowOpacity: 0.12,
 
-    borderRadius: 33,
+      shadowRadius: 5,
+    },
 
-    borderWidth: 2,
 
-    justifyContent:
-      'center',
+    avatarPlaceholder: {
+      width: 100,
 
-    alignItems:
-      'center',
-  },
+      height: 100,
 
+      borderRadius: 50,
 
-  actionEmoji: {
-    fontSize: 24,
-  },
+      justifyContent:
+        'center',
 
+      alignItems:
+        'center',
 
-  // ==========================================================
-  // SIN PERFILES
-  // ==========================================================
+      marginBottom: 14,
 
-  emptyContainer: {
-    flex: 1,
+      borderWidth: 1,
+    },
 
-    justifyContent:
-      'center',
 
-    alignItems:
-      'center',
+    avatarEmoji: {
+      fontSize: 54,
+    },
 
-    paddingHorizontal: 30,
-  },
 
+    userName: {
+      fontSize: 22,
 
-  emptyEmoji: {
-    fontSize: 64,
+      fontWeight:
+        'bold',
 
-    marginBottom: 18,
-  },
+      textAlign:
+        'center',
+    },
 
 
-  emptyTitle: {
-    fontSize: 21,
+    // ========================================================
+    // AFINIDAD
+    // ========================================================
 
-    fontWeight: 'bold',
+    compatibilityBox: {
+      width: '100%',
 
-    textAlign:
-      'center',
-  },
+      maxWidth: 390,
 
+      borderWidth: 1,
 
-  emptyDescription: {
-    fontSize: 14,
+      borderRadius: 12,
 
-    textAlign:
-      'center',
+      paddingHorizontal: 12,
 
-    lineHeight: 21,
+      paddingVertical: 10,
 
-    marginTop: 10,
+      marginTop: 14,
 
-    maxWidth: 420,
-  },
+      alignItems:
+        'center',
+    },
 
 
-  reloadButton: {
-    marginTop: 22,
+    compatibilityTitle: {
+      fontSize: 13,
 
-    paddingHorizontal: 22,
+      fontWeight:
+        '700',
 
-    paddingVertical: 12,
+      textAlign:
+        'center',
+    },
 
-    borderRadius: 10,
-  },
 
+    compatibilitySports: {
+      fontSize: 12,
 
-  reloadButtonText: {
-    color: '#FFFFFF',
+      fontWeight:
+        '600',
 
-    fontWeight: 'bold',
+      textAlign:
+        'center',
 
-    fontSize: 14,
-  },
-});
+      marginTop: 5,
+
+      lineHeight: 18,
+    },
+
+
+    sameLevelText: {
+      fontSize: 11,
+
+      textAlign:
+        'center',
+
+      marginTop: 5,
+    },
+
+
+    noCommonSports: {
+      fontSize: 12,
+
+      textAlign:
+        'center',
+
+      lineHeight: 18,
+    },
+
+
+    // ========================================================
+    // INFORMACIÓN
+    // ========================================================
+
+    userSport: {
+      fontSize: 14,
+
+      fontWeight:
+        '600',
+
+      marginTop: 12,
+
+      textAlign:
+        'center',
+
+      lineHeight: 21,
+    },
+
+
+    userLevel: {
+      fontSize: 13,
+
+      marginTop: 7,
+
+      fontWeight:
+        '600',
+    },
+
+
+    userBio: {
+      fontSize: 14,
+
+      textAlign:
+        'center',
+
+      marginTop: 14,
+
+      paddingHorizontal: 10,
+
+      lineHeight: 20,
+    },
+
+
+    // ========================================================
+    // ACCIONES
+    // ========================================================
+
+    actions: {
+      flexDirection:
+        'row',
+
+      gap: 30,
+
+      marginBottom: 10,
+    },
+
+
+    circleBtn: {
+      width: 65,
+
+      height: 65,
+
+      borderRadius: 33,
+
+      borderWidth: 2,
+
+      justifyContent:
+        'center',
+
+      alignItems:
+        'center',
+    },
+
+
+    actionEmoji: {
+      fontSize: 24,
+    },
+
+
+    // ========================================================
+    // SIN PERFILES
+    // ========================================================
+
+    emptyContainer: {
+      flex: 1,
+
+      justifyContent:
+        'center',
+
+      alignItems:
+        'center',
+
+      paddingHorizontal: 30,
+    },
+
+
+    emptyEmoji: {
+      fontSize: 64,
+
+      marginBottom: 18,
+    },
+
+
+    emptyTitle: {
+      fontSize: 21,
+
+      fontWeight:
+        'bold',
+
+      textAlign:
+        'center',
+    },
+
+
+    emptyDescription: {
+      fontSize: 14,
+
+      textAlign:
+        'center',
+
+      lineHeight: 21,
+
+      marginTop: 10,
+
+      maxWidth: 420,
+    },
+
+
+    reloadButton: {
+      marginTop: 22,
+
+      paddingHorizontal: 22,
+
+      paddingVertical: 12,
+
+      borderRadius: 10,
+    },
+
+
+    reloadButtonText: {
+      color:
+        '#FFFFFF',
+
+      fontWeight:
+        'bold',
+
+      fontSize: 14,
+    },
+  });
