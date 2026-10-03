@@ -10,17 +10,10 @@
 // - Prioriza deportes en común.
 // - Considera nivel deportivo.
 // - Calcula distancia sin obtener coordenadas ajenas.
-// - Respeta el radio de búsqueda configurado por el usuario.
+// - Respeta el radio de búsqueda configurado.
+// - Permite abrir el detalle completo del deportista.
 // - Registra Like / Pass.
 // - Detecta Match mutuo.
-//
-// RADIO:
-//
-// 5  = máximo 5 km
-// 10 = máximo 10 km
-// 25 = máximo 25 km
-// 50 = máximo 50 km
-// 0  = sin límite
 //
 // ============================================================
 
@@ -36,6 +29,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  ScrollView,
 } from 'react-native';
 
 import {
@@ -43,14 +37,21 @@ import {
   useRouter,
 } from 'expo-router';
 
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  SafeAreaView,
+} from 'react-native-safe-area-context';
 
-import { supabase } from '../../lib/supabase';
-import { useTheme } from '../../lib/ThemeContext';
+import {
+  supabase,
+} from '../../lib/supabase';
+
+import {
+  useTheme,
+} from '../../lib/ThemeContext';
 
 
 // ============================================================
-// TIPO DE PERFIL
+// TIPOS
 // ============================================================
 
 interface PerfilMatch {
@@ -75,10 +76,6 @@ interface PerfilMatch {
   distanceKm: number | null;
 }
 
-
-// ============================================================
-// DISTANCIA DEVUELTA POR SUPABASE
-// ============================================================
 
 interface DistanciaPerfil {
   target_id: string;
@@ -179,7 +176,6 @@ export default function MatchScreen() {
   ] = useState(false);
 
 
-  // Radio actual del usuario.
   const [
     radioBusqueda,
     setRadioBusqueda,
@@ -197,7 +193,7 @@ export default function MatchScreen() {
 
 
   // ==========================================================
-  // CARGAR AL ENTRAR
+  // RECARGAR AL ENTRAR
   // ==========================================================
 
   useFocusEffect(
@@ -213,7 +209,9 @@ export default function MatchScreen() {
 
   async function cargarPerfiles() {
     try {
-      setCargando(true);
+      setCargando(
+        true
+      );
 
 
       // ------------------------------------------------------
@@ -252,34 +250,30 @@ export default function MatchScreen() {
 
 
       // ------------------------------------------------------
-      // 2. OBTENER MIS PREFERENCIAS
-      // ------------------------------------------------------
-      //
-      // Aquí obtenemos:
-      //
-      // - mis deportes;
-      // - mi nivel;
-      // - mi radio de búsqueda.
+      // 2. MIS PREFERENCIAS
       // ------------------------------------------------------
 
       const {
-        data: miPerfil,
+        data:
+          miPerfil,
+
         error:
           miPerfilError,
-      } = await supabase
-        .from('profiles')
-        .select(
-          `
-          sports,
-          skill_level,
-          search_radius_km
-          `
-        )
-        .eq(
-          'id',
-          user.id
-        )
-        .maybeSingle();
+      } =
+        await supabase
+          .from(
+            'profiles'
+          )
+          .select(`
+            sports,
+            skill_level,
+            search_radius_km
+          `)
+          .eq(
+            'id',
+            user.id
+          )
+          .maybeSingle();
 
 
       if (miPerfilError) {
@@ -301,11 +295,12 @@ export default function MatchScreen() {
 
 
       // ------------------------------------------------------
-      // RADIO
+      // 3. RADIO DE BÚSQUEDA
       // ------------------------------------------------------
 
       const radioActual =
-        typeof miPerfil?.search_radius_km ===
+        typeof miPerfil
+          ?.search_radius_km ===
           'number'
           ? miPerfil.search_radius_km
           : 25;
@@ -317,20 +312,13 @@ export default function MatchScreen() {
 
 
       // ------------------------------------------------------
-      // 3. OBTENER DISTANCIAS
-      // ------------------------------------------------------
-      //
-      // La función segura solamente devuelve:
-      //
-      // target_id
-      // distance_km
-      //
-      // Nunca devuelve latitud/longitud.
+      // 4. DISTANCIAS
       // ------------------------------------------------------
 
       const {
         data:
           distanciasData,
+
         error:
           distanciasError,
       } =
@@ -362,6 +350,7 @@ export default function MatchScreen() {
         ) => {
           mapaDistancias.set(
             distancia.target_id,
+
             Number(
               distancia.distance_km
             )
@@ -371,25 +360,27 @@ export default function MatchScreen() {
 
 
       // ------------------------------------------------------
-      // 4. SWIPES YA REALIZADOS
+      // 5. SWIPES YA REALIZADOS
       // ------------------------------------------------------
 
       const {
         data:
           swipesData,
+
         error:
           swipesError,
-      } = await supabase
-        .from(
-          'profile_swipes'
-        )
-        .select(
-          'target_id'
-        )
-        .eq(
-          'swiper_id',
-          user.id
-        );
+      } =
+        await supabase
+          .from(
+            'profile_swipes'
+          )
+          .select(
+            'target_id'
+          )
+          .eq(
+            'swiper_id',
+            user.id
+          );
 
 
       if (swipesError) {
@@ -412,30 +403,32 @@ export default function MatchScreen() {
 
 
       // ------------------------------------------------------
-      // 5. OBTENER PERFILES
+      // 6. OBTENER PERFILES
       // ------------------------------------------------------
 
       const {
         data:
           perfilesData,
+
         error:
           perfilesError,
-      } = await supabase
-        .from('profiles')
-        .select(
-          `
-          id,
-          full_name,
-          age,
-          bio,
-          sports,
-          skill_level
-          `
-        )
-        .neq(
-          'id',
-          user.id
-        );
+      } =
+        await supabase
+          .from(
+            'profiles'
+          )
+          .select(`
+            id,
+            full_name,
+            age,
+            bio,
+            sports,
+            skill_level
+          `)
+          .neq(
+            'id',
+            user.id
+          );
 
 
       if (perfilesError) {
@@ -444,7 +437,7 @@ export default function MatchScreen() {
 
 
       // ------------------------------------------------------
-      // 6. EXCLUIR PERFILES YA EVALUADOS
+      // 7. EXCLUIR LOS YA EVALUADOS
       // ------------------------------------------------------
 
       const perfilesSinEvaluar =
@@ -462,20 +455,7 @@ export default function MatchScreen() {
 
 
       // ------------------------------------------------------
-      // 7. APLICAR RADIO DE BÚSQUEDA
-      // ------------------------------------------------------
-      //
-      // radioActual === 0:
-      //
-      //     Sin límite.
-      //
-      // Si existe un radio concreto:
-      //
-      //     Solo entran perfiles que:
-      //
-      //     1. tengan distancia conocida;
-      //     2. estén dentro del radio.
-      //
+      // 8. APLICAR RADIO
       // ------------------------------------------------------
 
       const perfilesDentroDelRadio =
@@ -483,9 +463,7 @@ export default function MatchScreen() {
           (
             perfil
           ) => {
-            // ----------------------------------------------
-            // SIN LÍMITE
-            // ----------------------------------------------
+            // Sin límite.
 
             if (
               radioActual ===
@@ -495,18 +473,15 @@ export default function MatchScreen() {
             }
 
 
-            // ----------------------------------------------
-            // OBTENER DISTANCIA
-            // ----------------------------------------------
-
             const distancia =
               mapaDistancias.get(
                 perfil.id
               );
 
 
-            // No podemos garantizar que esté
-            // dentro del radio si no posee ubicación.
+            // Si existe un límite y no conocemos
+            // la distancia, no podemos garantizar
+            // que esté dentro del radio.
 
             if (
               distancia ===
@@ -515,10 +490,6 @@ export default function MatchScreen() {
               return false;
             }
 
-
-            // ----------------------------------------------
-            // COMPROBAR RADIO
-            // ----------------------------------------------
 
             return (
               distancia <=
@@ -529,7 +500,7 @@ export default function MatchScreen() {
 
 
       // ------------------------------------------------------
-      // 8. CALCULAR AFINIDAD
+      // 9. AFINIDAD
       // ------------------------------------------------------
 
       const perfilesConAfinidad: PerfilMatch[] =
@@ -545,10 +516,6 @@ export default function MatchScreen() {
                 : [];
 
 
-            // ----------------------------------------------
-            // DEPORTES EN COMÚN
-            // ----------------------------------------------
-
             const deportesEnComun =
               misDeportes.filter(
                 (
@@ -560,10 +527,6 @@ export default function MatchScreen() {
               );
 
 
-            // ----------------------------------------------
-            // MISMO NIVEL
-            // ----------------------------------------------
-
             const mismoNivel =
               Boolean(
                 miNivel &&
@@ -573,15 +536,11 @@ export default function MatchScreen() {
               );
 
 
-            // ----------------------------------------------
-            // PUNTAJE
-            // ----------------------------------------------
-            //
-            // +10 por deporte en común.
+            // +10 por deporte compartido.
             // +2 por mismo nivel.
             //
-            // No representa porcentaje.
-            // ----------------------------------------------
+            // Esto es solamente criterio de orden,
+            // no un porcentaje de compatibilidad.
 
             const puntajeOrden =
               (
@@ -594,10 +553,6 @@ export default function MatchScreen() {
                   : 0
               );
 
-
-            // ----------------------------------------------
-            // DISTANCIA
-            // ----------------------------------------------
 
             const distanceKm =
               mapaDistancias.get(
@@ -638,7 +593,7 @@ export default function MatchScreen() {
 
 
       // ------------------------------------------------------
-      // 9. ORDENAR
+      // 10. ORDENAR
       // ------------------------------------------------------
 
       perfilesConAfinidad.sort(
@@ -646,7 +601,7 @@ export default function MatchScreen() {
           perfilA,
           perfilB
         ) => {
-          // Afinidad deportiva.
+          // Afinidad.
 
           if (
             perfilB.puntajeOrden !==
@@ -689,7 +644,7 @@ export default function MatchScreen() {
           }
 
 
-          // Perfiles con ubicación primero.
+          // Perfiles con distancia primero.
 
           if (
             perfilA.distanceKm !==
@@ -711,22 +666,18 @@ export default function MatchScreen() {
           }
 
 
-          // Nombre como último criterio.
+          // Nombre.
 
           return (
             perfilA.full_name ??
             ''
           ).localeCompare(
             perfilB.full_name ??
-              ''
+            ''
           );
         }
       );
 
-
-      // ------------------------------------------------------
-      // 10. GUARDAR RESULTADO
-      // ------------------------------------------------------
 
       setPerfiles(
         perfilesConAfinidad
@@ -759,7 +710,7 @@ export default function MatchScreen() {
 
 
   // ==========================================================
-  // TEXTO DEL RADIO
+  // TEXTO RADIO
   // ==========================================================
 
   function obtenerTextoRadio() {
@@ -808,9 +759,7 @@ export default function MatchScreen() {
             );
 
 
-          if (
-            !deporte
-          ) {
+          if (!deporte) {
             return deporteId;
           }
 
@@ -825,7 +774,7 @@ export default function MatchScreen() {
 
 
   // ==========================================================
-  // DEPORTES EN COMÚN
+  // DEPORTES COMPARTIDOS
   // ==========================================================
 
   function obtenerDeportesEnComun(
@@ -847,9 +796,7 @@ export default function MatchScreen() {
             );
 
 
-          if (
-            !deporte
-          ) {
+          if (!deporte) {
             return deporteId;
           }
 
@@ -895,6 +842,28 @@ export default function MatchScreen() {
 
 
   // ==========================================================
+  // ABRIR DETALLE DEL DEPORTISTA
+  // ==========================================================
+
+  function abrirDetallePerfil() {
+    if (!perfilActual) {
+      return;
+    }
+
+
+    router.push({
+      pathname:
+        '/deportista/[profileId]',
+
+      params: {
+        profileId:
+          perfilActual.id,
+      },
+    });
+  }
+
+
+  // ==========================================================
   // LIKE / PASS
   // ==========================================================
 
@@ -903,9 +872,7 @@ export default function MatchScreen() {
       'like' |
       'pass'
   ) {
-    if (
-      !perfilActual
-    ) {
+    if (!perfilActual) {
       return;
     }
 
@@ -932,9 +899,7 @@ export default function MatchScreen() {
         );
 
 
-      if (
-        error
-      ) {
+      if (error) {
         throw error;
       }
 
@@ -953,7 +918,7 @@ export default function MatchScreen() {
         true;
 
 
-      // Quitar el perfil actual.
+      // Eliminar la tarjeta actual.
 
       setPerfiles(
         (
@@ -1045,7 +1010,6 @@ export default function MatchScreen() {
               colors.primary
             }
           />
-
 
           <Text
             style={[
@@ -1202,9 +1166,12 @@ export default function MatchScreen() {
         },
       ]}
     >
-      <View
-        style={
+      <ScrollView
+        contentContainerStyle={
           styles.container
+        }
+        showsVerticalScrollIndicator={
+          false
         }
       >
         {/* ==================================================
@@ -1352,8 +1319,9 @@ export default function MatchScreen() {
               COMPATIBILIDAD
           ================================================== */}
 
-          {perfilActual.deportesEnComun.length >
-          0 ? (
+          {perfilActual
+            .deportesEnComun
+            .length > 0 ? (
             <View
               style={[
                 styles.compatibilityBox,
@@ -1399,12 +1367,14 @@ export default function MatchScreen() {
                 ]}
               >
                 {obtenerDeportesEnComun(
-                  perfilActual.deportesEnComun
+                  perfilActual
+                    .deportesEnComun
                 )}
               </Text>
 
 
-              {perfilActual.mismoNivel && (
+              {perfilActual
+                .mismoNivel && (
                 <Text
                   style={[
                     styles.sameLevelText,
@@ -1440,7 +1410,8 @@ export default function MatchScreen() {
                   },
                 ]}
               >
-                {perfilActual.mismoNivel
+                {perfilActual
+                  .mismoNivel
                   ? '🎯 Mismo nivel deportivo, sin deportes en común configurados.'
                   : 'Sin deportes en común configurados.'}
               </Text>
@@ -1500,11 +1471,44 @@ export default function MatchScreen() {
               ? `"${perfilActual.bio}"`
               : 'Este usuario todavía no ha agregado una biografía.'}
           </Text>
+
+
+          {/* ==================================================
+              RF13 - VER PERFIL COMPLETO
+          ================================================== */}
+
+          <TouchableOpacity
+            style={[
+              styles.detailButton,
+              {
+                borderColor:
+                  colors.primary,
+
+                backgroundColor:
+                  colors.primarySoft,
+              },
+            ]}
+            onPress={
+              abrirDetallePerfil
+            }
+          >
+            <Text
+              style={[
+                styles.detailButtonText,
+                {
+                  color:
+                    colors.primary,
+                },
+              ]}
+            >
+              Ver perfil completo
+            </Text>
+          </TouchableOpacity>
         </View>
 
 
         {/* ==================================================
-            BOTONES
+            LIKE / PASS
         ================================================== */}
 
         <View
@@ -1601,7 +1605,7 @@ export default function MatchScreen() {
             )}
           </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -1619,15 +1623,17 @@ const styles =
 
 
     container: {
-      flex: 1,
+      flexGrow: 1,
+
+      width: '100%',
 
       padding: 20,
 
-      justifyContent:
-        'space-between',
-
       alignItems:
         'center',
+
+      justifyContent:
+        'space-between',
     },
 
 
@@ -1718,8 +1724,6 @@ const styles =
 
       maxWidth: 520,
 
-      minHeight: '56%',
-
       borderRadius: 20,
 
       padding: 20,
@@ -1732,6 +1736,10 @@ const styles =
 
       borderWidth: 1,
 
+      marginTop: 24,
+
+      marginBottom: 22,
+
       elevation: 4,
 
       shadowColor:
@@ -1739,7 +1747,6 @@ const styles =
 
       shadowOffset: {
         width: 0,
-
         height: 2,
       },
 
@@ -1911,7 +1918,37 @@ const styles =
 
 
     // ========================================================
-    // BOTONES LIKE/PASS
+    // DETALLE DE PERFIL
+    // ========================================================
+
+    detailButton: {
+      width: '100%',
+
+      maxWidth: 300,
+
+      borderWidth: 1,
+
+      borderRadius: 10,
+
+      paddingVertical: 11,
+
+      alignItems:
+        'center',
+
+      marginTop: 18,
+    },
+
+
+    detailButtonText: {
+      fontSize: 13,
+
+      fontWeight:
+        '700',
+    },
+
+
+    // ========================================================
+    // BOTONES
     // ========================================================
 
     actions: {
@@ -1920,7 +1957,7 @@ const styles =
 
       gap: 30,
 
-      marginBottom: 10,
+      marginBottom: 16,
     },
 
 
