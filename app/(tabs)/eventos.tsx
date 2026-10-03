@@ -7,16 +7,20 @@
 // - Cargar eventos reales desde Supabase.
 // - Crear nuevos eventos.
 // - Ver eventos disponibles.
-// - Ver los eventos creados por el usuario.
+// - Ver eventos creados por el usuario.
 // - Ver eventos a los que el usuario se ha unido.
 // - Unirse a eventos.
-// - Cancelar participación.
+// - Cancelar participación con confirmación.
 // - Calcular cupos restantes.
 // - Buscar y filtrar eventos.
 // - Abrir el detalle completo de cada evento.
+// - Mostrar estados de carga.
+// - Mostrar estados vacíos contextuales.
+// - Mostrar errores comprensibles.
+// - Permitir reintentar cuando falla la carga.
 // - Mantener compatibilidad con modo claro / oscuro.
 //
-// Tablas utilizadas:
+// Tablas:
 //
 // public.events
 // public.event_participants
@@ -40,16 +44,22 @@ import {
   ActivityIndicator,
 } from 'react-native';
 
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  SafeAreaView,
+} from 'react-native-safe-area-context';
 
 import {
   useFocusEffect,
   useRouter,
 } from 'expo-router';
 
-import { supabase } from '../../lib/supabase';
+import {
+  supabase,
+} from '../../lib/supabase';
 
-import { useTheme } from '../../lib/ThemeContext';
+import {
+  useTheme,
+} from '../../lib/ThemeContext';
 
 
 // ============================================================
@@ -67,20 +77,41 @@ interface Evento {
 
   fecha: string;
 
-  // Cupos disponibles actualmente.
+  // Cupos actualmente disponibles.
   cupos: number;
 
   // Cupos originalmente publicados.
   cuposTotales: number;
 
-  // UUID del creador.
+  // UUID del organizador.
   creatorId: string;
 
-  // true si el usuario autenticado creó el evento.
+  // Indica si el usuario actual creó el evento.
   esMio: boolean;
 
-  // true si el usuario autenticado está inscrito.
+  // Indica si el usuario actual participa.
   unido: boolean;
+}
+
+
+// ============================================================
+// ESTADO VACÍO
+// ============================================================
+
+interface EstadoVacio {
+  icono: string;
+
+  titulo: string;
+
+  descripcion: string;
+
+  accion?:
+    | 'reintentar'
+    | 'crear'
+    | 'limpiar'
+    | 'disponibles';
+
+  textoAccion?: string;
 }
 
 
@@ -91,6 +122,7 @@ interface Evento {
 export default function EventosScreen() {
   const router =
     useRouter();
+
 
   const {
     isDark,
@@ -154,19 +186,43 @@ export default function EventosScreen() {
     cargandoEventos,
     setCargandoEventos,
   ] =
-    useState(true);
+    useState(
+      true
+    );
 
 
   const [
     guardandoEvento,
     setGuardandoEvento,
   ] =
-    useState(false);
+    useState(
+      false
+    );
 
 
   const [
     eventoProcesando,
     setEventoProcesando,
+  ] =
+    useState<
+      string |
+      null
+    >(
+      null
+    );
+
+
+  // ==========================================================
+  // RF18 - ERROR DE CARGA
+  // ==========================================================
+  //
+  // En lugar de dejar una pantalla vacía después de un error,
+  // conservamos un estado visible que permite reintentar.
+  // ==========================================================
+
+  const [
+    errorCarga,
+    setErrorCarga,
   ] =
     useState<
       string |
@@ -184,7 +240,9 @@ export default function EventosScreen() {
     titulo,
     setTitulo,
   ] =
-    useState('');
+    useState(
+      ''
+    );
 
 
   const [
@@ -200,21 +258,27 @@ export default function EventosScreen() {
     lugar,
     setLugar,
   ] =
-    useState('');
+    useState(
+      ''
+    );
 
 
   const [
     fecha,
     setFecha,
   ] =
-    useState('');
+    useState(
+      ''
+    );
 
 
   const [
     cupos,
     setCupos,
   ] =
-    useState('');
+    useState(
+      ''
+    );
 
 
   // ==========================================================
@@ -242,6 +306,11 @@ export default function EventosScreen() {
       );
 
 
+      setErrorCarga(
+        null
+      );
+
+
       // ------------------------------------------------------
       // 1. USUARIO AUTENTICADO
       // ------------------------------------------------------
@@ -250,6 +319,7 @@ export default function EventosScreen() {
         data: {
           user,
         },
+
         error:
           userError,
       } =
@@ -271,9 +341,11 @@ export default function EventosScreen() {
           'Debes iniciar sesión nuevamente.'
         );
 
+
         router.replace(
           '/login'
         );
+
 
         return;
       }
@@ -286,6 +358,7 @@ export default function EventosScreen() {
       const {
         data:
           eventosData,
+
         error:
           eventosError,
       } =
@@ -293,8 +366,7 @@ export default function EventosScreen() {
           .from(
             'events'
           )
-          .select(
-            `
+          .select(`
             id,
             creator_id,
             title,
@@ -303,8 +375,7 @@ export default function EventosScreen() {
             date_text,
             slots,
             created_at
-            `
-          )
+          `)
           .order(
             'created_at',
             {
@@ -321,6 +392,10 @@ export default function EventosScreen() {
       }
 
 
+      // ------------------------------------------------------
+      // SIN EVENTOS
+      // ------------------------------------------------------
+
       if (
         !eventosData ||
         eventosData.length ===
@@ -329,6 +404,7 @@ export default function EventosScreen() {
         setEventos(
           []
         );
+
 
         return;
       }
@@ -341,6 +417,7 @@ export default function EventosScreen() {
       const {
         data:
           participantesData,
+
         error:
           participantesError,
       } =
@@ -348,12 +425,10 @@ export default function EventosScreen() {
           .from(
             'event_participants'
           )
-          .select(
-            `
+          .select(`
             event_id,
             user_id
-            `
-          );
+          `);
 
 
       if (
@@ -460,16 +535,29 @@ export default function EventosScreen() {
     } catch (
       error: any
     ) {
+      // ------------------------------------------------------
+      // RF18
+      // ------------------------------------------------------
+      //
+      // El error técnico queda disponible en consola.
+      //
+      // Al usuario no le mostramos directamente el mensaje
+      // interno entregado por Supabase.
+      // ------------------------------------------------------
+
       console.log(
         'Error cargando eventos:',
         error
       );
 
 
-      Alert.alert(
-        'Error',
-        error?.message ??
-          'No se pudieron cargar los eventos.'
+      setEventos(
+        []
+      );
+
+
+      setErrorCarga(
+        'No pudimos cargar los eventos. Revisa tu conexión e inténtalo nuevamente.'
       );
     } finally {
       setCargandoEventos(
@@ -484,6 +572,10 @@ export default function EventosScreen() {
   // ==========================================================
 
   async function handleCrearEvento() {
+    // --------------------------------------------------------
+    // VALIDAR CAMPOS
+    // --------------------------------------------------------
+
     if (
       !titulo.trim() ||
       !lugar.trim() ||
@@ -492,12 +584,17 @@ export default function EventosScreen() {
     ) {
       Alert.alert(
         'Campos incompletos',
-        'Por favor llena todos los datos del evento.'
+        'Completa el título, lugar, fecha/hora y cantidad de cupos antes de publicar.'
       );
+
 
       return;
     }
 
+
+    // --------------------------------------------------------
+    // VALIDAR CUPOS
+    // --------------------------------------------------------
 
     const cuposNumero =
       Number(
@@ -514,8 +611,9 @@ export default function EventosScreen() {
     ) {
       Alert.alert(
         'Cupos inválidos',
-        'Ingresa una cantidad válida de jugadores faltantes.'
+        'Ingresa un número entero mayor a 0 para los jugadores faltantes.'
       );
+
 
       return;
     }
@@ -527,10 +625,15 @@ export default function EventosScreen() {
       );
 
 
+      // ------------------------------------------------------
+      // USUARIO
+      // ------------------------------------------------------
+
       const {
         data: {
           user,
         },
+
         error:
           userError,
       } =
@@ -552,13 +655,19 @@ export default function EventosScreen() {
           'Debes iniciar sesión nuevamente.'
         );
 
+
         router.replace(
           '/login'
         );
 
+
         return;
       }
 
+
+      // ------------------------------------------------------
+      // INSERTAR EVENTO
+      // ------------------------------------------------------
 
       const {
         error:
@@ -588,7 +697,8 @@ export default function EventosScreen() {
               cuposNumero,
 
             updated_at:
-              new Date().toISOString(),
+              new Date()
+                .toISOString(),
           });
 
 
@@ -599,23 +709,35 @@ export default function EventosScreen() {
       }
 
 
-      // Limpiar formulario.
+      // ------------------------------------------------------
+      // LIMPIAR FORMULARIO
+      // ------------------------------------------------------
+      //
+      // Solo limpiamos los campos DESPUÉS de comprobar que
+      // Supabase guardó correctamente el evento.
+      //
+      // Si ocurre un error, el usuario conserva lo escrito.
+      // ------------------------------------------------------
 
       setTitulo(
         ''
       );
 
+
       setDeporte(
         'Fútbol'
       );
+
 
       setLugar(
         ''
       );
 
+
       setFecha(
         ''
       );
+
 
       setCupos(
         ''
@@ -626,6 +748,10 @@ export default function EventosScreen() {
         false
       );
 
+
+      // ------------------------------------------------------
+      // ACTUALIZAR LISTA
+      // ------------------------------------------------------
 
       await cargarEventos();
 
@@ -644,9 +770,8 @@ export default function EventosScreen() {
 
 
       Alert.alert(
-        'Error al crear',
-        error?.message ??
-          'No se pudo publicar el evento.'
+        'No se pudo publicar',
+        'Ocurrió un problema al guardar el evento. Revisa tu conexión e inténtalo nuevamente.'
       );
     } finally {
       setGuardandoEvento(
@@ -663,6 +788,10 @@ export default function EventosScreen() {
   async function handleUnirse(
     id: string
   ) {
+    // --------------------------------------------------------
+    // COMPROBAR QUE EL EVENTO SIGUE EXISTIENDO
+    // --------------------------------------------------------
+
     const evento =
       eventos.find(
         (
@@ -676,9 +805,53 @@ export default function EventosScreen() {
     if (
       !evento
     ) {
+      Alert.alert(
+        'Evento no disponible',
+        'Este partido ya no está disponible. Actualiza la lista e inténtalo nuevamente.'
+      );
+
+
       return;
     }
 
+
+    // --------------------------------------------------------
+    // EVENTO PROPIO
+    // --------------------------------------------------------
+
+    if (
+      evento.esMio
+    ) {
+      Alert.alert(
+        'Eres el organizador',
+        'No necesitas inscribirte en un partido que tú mismo organizaste.'
+      );
+
+
+      return;
+    }
+
+
+    // --------------------------------------------------------
+    // YA INSCRITO
+    // --------------------------------------------------------
+
+    if (
+      evento.unido
+    ) {
+      Alert.alert(
+        'Ya estás inscrito',
+        'Ya participas en este evento.'
+      );
+
+
+      return;
+    }
+
+
+    // --------------------------------------------------------
+    // SIN CUPOS
+    // --------------------------------------------------------
 
     if (
       evento.cupos <=
@@ -688,6 +861,7 @@ export default function EventosScreen() {
         'Evento completo',
         'Este partido ya no tiene cupos disponibles.'
       );
+
 
       return;
     }
@@ -699,10 +873,15 @@ export default function EventosScreen() {
       );
 
 
+      // ------------------------------------------------------
+      // USUARIO
+      // ------------------------------------------------------
+
       const {
         data: {
           user,
         },
+
         error:
           userError,
       } =
@@ -724,13 +903,19 @@ export default function EventosScreen() {
           'Debes iniciar sesión nuevamente.'
         );
 
+
         router.replace(
           '/login'
         );
 
+
         return;
       }
 
+
+      // ------------------------------------------------------
+      // INSERTAR PARTICIPACIÓN
+      // ------------------------------------------------------
 
       const {
         error:
@@ -752,6 +937,10 @@ export default function EventosScreen() {
       if (
         unirseError
       ) {
+        // ----------------------------------------------------
+        // 23505 = registro duplicado.
+        // ----------------------------------------------------
+
         if (
           unirseError.code ===
           '23505'
@@ -761,12 +950,18 @@ export default function EventosScreen() {
             'Ya participas en este evento.'
           );
 
+
           return;
         }
+
 
         throw unirseError;
       }
 
+
+      // ------------------------------------------------------
+      // RECARGAR EVENTOS
+      // ------------------------------------------------------
 
       await cargarEventos();
 
@@ -785,15 +980,81 @@ export default function EventosScreen() {
 
 
       Alert.alert(
-        'Error',
-        error?.message ??
-          'No se pudo completar la inscripción.'
+        'No se pudo completar la inscripción',
+        'Ocurrió un problema al inscribirte. Revisa tu conexión e inténtalo nuevamente.'
       );
     } finally {
       setEventoProcesando(
         null
       );
     }
+  }
+
+
+  // ==========================================================
+  // CONFIRMAR CANCELACIÓN
+  // ==========================================================
+  //
+  // RF18:
+  //
+  // Una acción que elimina una participación no debe
+  // producirse accidentalmente con un solo toque.
+  // ==========================================================
+
+  function confirmarCancelarParticipacion(
+    id: string
+  ) {
+    const evento =
+      eventos.find(
+        (
+          item
+        ) =>
+          item.id ===
+          id
+      );
+
+
+    if (
+      !evento
+    ) {
+      Alert.alert(
+        'Evento no disponible',
+        'Este partido ya no está disponible. Actualiza la lista e inténtalo nuevamente.'
+      );
+
+
+      return;
+    }
+
+
+    Alert.alert(
+      'Cancelar participación',
+
+      `¿Seguro que quieres salir de "${evento.titulo}"?`,
+
+      [
+        {
+          text:
+            'Volver',
+
+          style:
+            'cancel',
+        },
+
+        {
+          text:
+            'Sí, cancelar',
+
+          style:
+            'destructive',
+
+          onPress: () =>
+            handleCancelarParticipacion(
+              id
+            ),
+        },
+      ]
+    );
   }
 
 
@@ -810,10 +1071,15 @@ export default function EventosScreen() {
       );
 
 
+      // ------------------------------------------------------
+      // USUARIO
+      // ------------------------------------------------------
+
       const {
         data: {
           user,
         },
+
         error:
           userError,
       } =
@@ -835,13 +1101,19 @@ export default function EventosScreen() {
           'Debes iniciar sesión nuevamente.'
         );
 
+
         router.replace(
           '/login'
         );
 
+
         return;
       }
 
+
+      // ------------------------------------------------------
+      // ELIMINAR PARTICIPACIÓN
+      // ------------------------------------------------------
 
       const {
         error:
@@ -869,6 +1141,10 @@ export default function EventosScreen() {
       }
 
 
+      // ------------------------------------------------------
+      // ACTUALIZAR
+      // ------------------------------------------------------
+
       await cargarEventos();
 
 
@@ -886,9 +1162,8 @@ export default function EventosScreen() {
 
 
       Alert.alert(
-        'Error',
-        error?.message ??
-          'No se pudo cancelar la participación.'
+        'No se pudo cancelar',
+        'Ocurrió un problema al cancelar tu participación. Revisa tu conexión e inténtalo nuevamente.'
       );
     } finally {
       setEventoProcesando(
@@ -926,12 +1201,20 @@ export default function EventosScreen() {
       (
         ev
       ) => {
+        // ----------------------------------------------------
+        // FILTRO DE DEPORTE
+        // ----------------------------------------------------
+
         const coincideFiltro =
           filtroDeporte ===
             'Todos' ||
           ev.deporte ===
             filtroDeporte;
 
+
+        // ----------------------------------------------------
+        // TEXTO DE BÚSQUEDA
+        // ----------------------------------------------------
 
         const textoBusqueda =
           busqueda
@@ -952,6 +1235,10 @@ export default function EventosScreen() {
             );
 
 
+        // ----------------------------------------------------
+        // MIS EVENTOS
+        // ----------------------------------------------------
+
         if (
           vista ===
           'mis_eventos'
@@ -967,12 +1254,232 @@ export default function EventosScreen() {
         }
 
 
+        // ----------------------------------------------------
+        // DISPONIBLES
+        // ----------------------------------------------------
+
         return (
           coincideFiltro &&
           coincideBusqueda
         );
       }
     );
+
+
+  // ==========================================================
+  // RF18 - ESTADO VACÍO CONTEXTUAL
+  // ==========================================================
+
+  function obtenerEstadoVacio():
+    EstadoVacio {
+    // --------------------------------------------------------
+    // ERROR DE CONEXIÓN / SUPABASE
+    // --------------------------------------------------------
+
+    if (
+      errorCarga
+    ) {
+      return {
+        icono:
+          '⚠️',
+
+        titulo:
+          'No pudimos cargar los eventos',
+
+        descripcion:
+          errorCarga,
+
+        accion:
+          'reintentar',
+
+        textoAccion:
+          'Reintentar',
+      };
+    }
+
+
+    // --------------------------------------------------------
+    // NO EXISTE NINGÚN EVENTO
+    // --------------------------------------------------------
+
+    if (
+      eventos.length ===
+      0
+    ) {
+      return {
+        icono:
+          '🏟️',
+
+        titulo:
+          'Aún no hay partidos publicados',
+
+        descripcion:
+          'Puedes crear el primer evento deportivo usando el botón de abajo.',
+
+        accion:
+          'crear',
+
+        textoAccion:
+          'Crear partido',
+      };
+    }
+
+
+    // --------------------------------------------------------
+    // BÚSQUEDA SIN RESULTADOS
+    // --------------------------------------------------------
+
+    if (
+      busqueda
+        .trim()
+        .length >
+      0
+    ) {
+      return {
+        icono:
+          '🔎',
+
+        titulo:
+          'Sin resultados',
+
+        descripcion:
+          `No encontramos partidos para "${busqueda.trim()}" con la configuración actual.`,
+
+        accion:
+          'limpiar',
+
+        textoAccion:
+          'Limpiar búsqueda y filtros',
+      };
+    }
+
+
+    // --------------------------------------------------------
+    // FILTRO DE DEPORTE SIN RESULTADOS
+    // --------------------------------------------------------
+
+    if (
+      filtroDeporte !==
+      'Todos'
+    ) {
+      return {
+        icono:
+          '🏅',
+
+        titulo:
+          'No hay partidos con este filtro',
+
+        descripcion:
+          `No encontramos eventos de ${filtroDeporte} en esta vista.`,
+
+        accion:
+          'limpiar',
+
+        textoAccion:
+          'Mostrar todos',
+      };
+    }
+
+
+    // --------------------------------------------------------
+    // MIS PARTIDOS VACÍO
+    // --------------------------------------------------------
+
+    if (
+      vista ===
+      'mis_eventos'
+    ) {
+      return {
+        icono:
+          '📅',
+
+        titulo:
+          'Todavía no tienes partidos',
+
+        descripcion:
+          'Aún no organizas ni participas en ningún evento. Puedes revisar los partidos disponibles.',
+
+        accion:
+          'disponibles',
+
+        textoAccion:
+          'Ver disponibles',
+      };
+    }
+
+
+    // --------------------------------------------------------
+    // DISPONIBLES VACÍO
+    // --------------------------------------------------------
+
+    return {
+      icono:
+        '🏅',
+
+      titulo:
+        'No hay partidos disponibles',
+
+      descripcion:
+        'No encontramos eventos disponibles en este momento.',
+
+      accion:
+        'reintentar',
+
+      textoAccion:
+        'Actualizar',
+    };
+  }
+
+
+  // ==========================================================
+  // ACCIÓN DEL ESTADO VACÍO
+  // ==========================================================
+
+  function ejecutarAccionEstadoVacio(
+    accion:
+      EstadoVacio['accion']
+  ) {
+    switch (
+      accion
+    ) {
+      case 'reintentar':
+        cargarEventos();
+        break;
+
+
+      case 'crear':
+        setModalCrear(
+          true
+        );
+        break;
+
+
+      case 'limpiar':
+        setBusqueda(
+          ''
+        );
+
+        setFiltroDeporte(
+          'Todos'
+        );
+        break;
+
+
+      case 'disponibles':
+        setVista(
+          'disponibles'
+        );
+        break;
+
+
+      default:
+        break;
+    }
+  }
+
+
+  const estadoVacio =
+    obtenerEstadoVacio();
 
 
   // ==========================================================
@@ -1140,6 +1647,8 @@ export default function EventosScreen() {
             },
           ]}
         >
+          {/* DISPONIBLES */}
+
           <TouchableOpacity
             style={[
               styles.tabButton,
@@ -1178,6 +1687,8 @@ export default function EventosScreen() {
             </Text>
           </TouchableOpacity>
 
+
+          {/* MIS PARTIDOS */}
 
           <TouchableOpacity
             style={[
@@ -1220,7 +1731,7 @@ export default function EventosScreen() {
 
 
         {/* ==================================================
-            LISTA DE EVENTOS
+            CARGANDO
         ================================================== */}
 
         {cargandoEventos ? (
@@ -1236,6 +1747,7 @@ export default function EventosScreen() {
               }
             />
 
+
             <Text
               style={[
                 styles.loadingText,
@@ -1248,7 +1760,109 @@ export default function EventosScreen() {
               Cargando eventos...
             </Text>
           </View>
+        ) : eventosFiltrados.length ===
+          0 ? (
+
+          // ==================================================
+          // RF18 - ESTADO VACÍO / ERROR
+          // ==================================================
+
+          <ScrollView
+            showsVerticalScrollIndicator={
+              false
+            }
+            contentContainerStyle={
+              styles.emptyScrollContent
+            }
+          >
+            <View
+              style={[
+                styles.emptyCard,
+                {
+                  backgroundColor:
+                    colors.card,
+
+                  borderColor:
+                    colors.border,
+                },
+              ]}
+            >
+              {/* ICONO */}
+
+              <Text
+                style={
+                  styles.emptyIcon
+                }
+              >
+                {estadoVacio.icono}
+              </Text>
+
+
+              {/* TÍTULO */}
+
+              <Text
+                style={[
+                  styles.emptyTitle,
+                  {
+                    color:
+                      colors.text,
+                  },
+                ]}
+              >
+                {estadoVacio.titulo}
+              </Text>
+
+
+              {/* DESCRIPCIÓN */}
+
+              <Text
+                style={[
+                  styles.emptyDescription,
+                  {
+                    color:
+                      colors.secondaryText,
+                  },
+                ]}
+              >
+                {estadoVacio.descripcion}
+              </Text>
+
+
+              {/* ACCIÓN */}
+
+              {estadoVacio.accion &&
+                estadoVacio.textoAccion && (
+                  <TouchableOpacity
+                    style={[
+                      styles.emptyActionButton,
+                      {
+                        backgroundColor:
+                          colors.primary,
+                      },
+                    ]}
+                    onPress={() =>
+                      ejecutarAccionEstadoVacio(
+                        estadoVacio.accion
+                      )
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.emptyActionButtonText
+                      }
+                    >
+                      {estadoVacio.textoAccion}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+            </View>
+          </ScrollView>
         ) : (
+
+          // ==================================================
+          // LISTA DE EVENTOS
+          // ==================================================
+
           <ScrollView
             showsVerticalScrollIndicator={
               false
@@ -1258,277 +1872,219 @@ export default function EventosScreen() {
                 80,
             }}
           >
-            {eventosFiltrados.length ===
-            0 ? (
-              <Text
-                style={[
-                  styles.emptyText,
-                  {
-                    color:
-                      colors.secondaryText,
-                  },
-                ]}
-              >
-                No se encontraron partidos en esta categoría.
-              </Text>
-            ) : (
-              eventosFiltrados.map(
-                (
-                  item
-                ) => (
-                  <View
-                    key={
-                      item.id
-                    }
-                    style={[
-                      styles.eventCard,
-                      {
-                        backgroundColor:
-                          colors.card,
+            {eventosFiltrados.map(
+              (
+                item
+              ) => (
+                <View
+                  key={
+                    item.id
+                  }
+                  style={[
+                    styles.eventCard,
+                    {
+                      backgroundColor:
+                        colors.card,
 
-                        borderColor:
-                          colors.border,
+                      borderColor:
+                        colors.border,
+                    },
+                  ]}
+                >
+                  {/* ========================================
+                      CABECERA
+                  ======================================== */}
+
+                  <View
+                    style={
+                      styles.cardHeader
+                    }
+                  >
+                    <Text
+                      style={[
+                        styles.eventTag,
+                        {
+                          color:
+                            isDark
+                              ? '#93C5FD'
+                              : '#2563EB',
+                        },
+                      ]}
+                    >
+                      ⚽ {item.deporte.toUpperCase()}
+                    </Text>
+
+
+                    <Text
+                      style={
+                        styles.eventSlots
+                      }
+                    >
+                      {item.esMio
+                        ? '👑 Organizado por ti'
+                        : item.cupos >
+                          0
+                        ? `Faltan ${item.cupos} jugadores`
+                        : 'Sin cupos'}
+                    </Text>
+                  </View>
+
+
+                  {/* ========================================
+                      TÍTULO
+                  ======================================== */}
+
+                  <Text
+                    style={[
+                      styles.eventTitle,
+                      {
+                        color:
+                          colors.text,
                       },
                     ]}
                   >
-                    {/* CABECERA */}
-
-                    <View
-                      style={
-                        styles.cardHeader
-                      }
-                    >
-                      <Text
-                        style={[
-                          styles.eventTag,
-                          {
-                            color:
-                              isDark
-                                ? '#93C5FD'
-                                : '#2563EB',
-                          },
-                        ]}
-                      >
-                        ⚽{' '}
-                        {item.deporte.toUpperCase()}
-                      </Text>
+                    {item.titulo}
+                  </Text>
 
 
-                      <Text
-                        style={
-                          styles.eventSlots
-                        }
-                      >
-                        {item.esMio
-                          ? '👑 Organizado por ti'
-                          : item.cupos >
-                            0
-                          ? `Faltan ${item.cupos} jugadores`
-                          : 'Sin cupos'}
-                      </Text>
-                    </View>
+                  {/* ========================================
+                      LUGAR
+                  ======================================== */}
+
+                  <Text
+                    style={[
+                      styles.eventDetails,
+                      {
+                        color:
+                          colors.secondaryText,
+                      },
+                    ]}
+                  >
+                    📍 {item.lugar}
+                  </Text>
 
 
-                    {/* TÍTULO */}
+                  {/* ========================================
+                      FECHA
+                  ======================================== */}
 
+                  <Text
+                    style={[
+                      styles.eventDetails,
+                      {
+                        color:
+                          colors.secondaryText,
+                      },
+                    ]}
+                  >
+                    🕒 {item.fecha}
+                  </Text>
+
+
+                  {/* ========================================
+                      VER DETALLE
+                  ======================================== */}
+
+                  <TouchableOpacity
+                    style={[
+                      styles.detailButton,
+                      {
+                        borderColor:
+                          colors.primary,
+                      },
+                    ]}
+                    onPress={() =>
+                      abrirDetalleEvento(
+                        item.id
+                      )
+                    }
+                  >
                     <Text
                       style={[
-                        styles.eventTitle,
+                        styles.detailButtonText,
                         {
                           color:
-                            colors.text,
-                        },
-                      ]}
-                    >
-                      {item.titulo}
-                    </Text>
-
-
-                    {/* LUGAR */}
-
-                    <Text
-                      style={[
-                        styles.eventDetails,
-                        {
-                          color:
-                            colors.secondaryText,
-                        },
-                      ]}
-                    >
-                      📍 {item.lugar}
-                    </Text>
-
-
-                    {/* FECHA */}
-
-                    <Text
-                      style={[
-                        styles.eventDetails,
-                        {
-                          color:
-                            colors.secondaryText,
-                        },
-                      ]}
-                    >
-                      🕒 {item.fecha}
-                    </Text>
-
-
-                    {/* ========================================
-                        VER DETALLE
-                    ======================================== */}
-
-                    <TouchableOpacity
-                      style={[
-                        styles.detailButton,
-                        {
-                          borderColor:
                             colors.primary,
                         },
                       ]}
-                      onPress={() =>
-                        abrirDetalleEvento(
-                          item.id
-                        )
-                      }
+                    >
+                      Ver detalle
+                    </Text>
+                  </TouchableOpacity>
+
+
+                  {/* ========================================
+                      EVENTO PROPIO
+                  ======================================== */}
+
+                  {item.esMio ? (
+                    <View
+                      style={[
+                        styles.organizerBadge,
+                        {
+                          backgroundColor:
+                            isDark
+                              ? '#312E81'
+                              : '#EEF2FF',
+                        },
+                      ]}
                     >
                       <Text
                         style={[
-                          styles.detailButtonText,
+                          styles.organizerBadgeText,
                           {
                             color:
-                              colors.primary,
+                              isDark
+                                ? '#C7D2FE'
+                                : '#4338CA',
                           },
                         ]}
                       >
-                        Ver detalle
+                        👑 Este evento fue creado por ti
                       </Text>
-                    </TouchableOpacity>
+                    </View>
+                  ) : item.unido ? (
 
+                    // ========================================
+                    // YA INSCRITO
+                    // ========================================
 
-                    {/* ========================================
-                        EVENTO PROPIO
-                    ======================================== */}
-
-                    {item.esMio ? (
+                    <>
                       <View
                         style={[
-                          styles.organizerBadge,
+                          styles.joinedBadge,
                           {
                             backgroundColor:
                               isDark
-                                ? '#312E81'
-                                : '#EEF2FF',
+                                ? '#153C2B'
+                                : '#DCFCE7',
                           },
                         ]}
                       >
                         <Text
                           style={[
-                            styles.organizerBadgeText,
+                            styles.joinedBadgeText,
                             {
                               color:
                                 isDark
-                                  ? '#C7D2FE'
-                                  : '#4338CA',
+                                  ? '#86EFAC'
+                                  : '#15803D',
                             },
                           ]}
                         >
-                          👑 Este evento fue creado por ti
+                          ✓ Ya estás anotado
                         </Text>
                       </View>
-                    ) : item.unido ? (
-                      <>
-                        {/* ====================================
-                            YA INSCRITO
-                        ==================================== */}
-
-                        <View
-                          style={[
-                            styles.joinedBadge,
-                            {
-                              backgroundColor:
-                                isDark
-                                  ? '#153C2B'
-                                  : '#DCFCE7',
-                            },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.joinedBadgeText,
-                              {
-                                color:
-                                  isDark
-                                    ? '#86EFAC'
-                                    : '#15803D',
-                              },
-                            ]}
-                          >
-                            ✓ Ya estás anotado
-                          </Text>
-                        </View>
 
 
-                        <TouchableOpacity
-                          style={[
-                            styles.cancelBtn,
-                            {
-                              borderColor:
-                                colors.dangerText,
-                            },
-                          ]}
-                          disabled={
-                            eventoProcesando ===
-                            item.id
-                          }
-                          onPress={() =>
-                            handleCancelarParticipacion(
-                              item.id
-                            )
-                          }
-                        >
-                          {eventoProcesando ===
-                          item.id ? (
-                            <ActivityIndicator
-                              size="small"
-                              color={
-                                colors.dangerText
-                              }
-                            />
-                          ) : (
-                            <Text
-                              style={[
-                                styles.cancelBtnText,
-                                {
-                                  color:
-                                    colors.dangerText,
-                                },
-                              ]}
-                            >
-                              Cancelar participación
-                            </Text>
-                          )}
-                        </TouchableOpacity>
-                      </>
-                    ) : item.cupos >
-                      0 ? (
-                      /* ======================================
-                         UNIRSE
-                      ====================================== */
+                      {/* CANCELAR */}
 
                       <TouchableOpacity
                         style={[
-                          styles.joinBtn,
+                          styles.cancelBtn,
                           {
-                            backgroundColor:
-                              isDark
-                                ? '#1E3A5F'
-                                : '#EFF6FF',
-
                             borderColor:
-                              isDark
-                                ? '#334E68'
-                                : '#DBEAFE',
+                              colors.dangerText,
                           },
                         ]}
                         disabled={
@@ -1536,7 +2092,7 @@ export default function EventosScreen() {
                           item.id
                         }
                         onPress={() =>
-                          handleUnirse(
+                          confirmarCancelarParticipacion(
                             item.id
                           )
                         }
@@ -1546,60 +2102,115 @@ export default function EventosScreen() {
                           <ActivityIndicator
                             size="small"
                             color={
-                              isDark
-                                ? '#93C5FD'
-                                : '#2563EB'
+                              colors.dangerText
                             }
                           />
                         ) : (
                           <Text
                             style={[
-                              styles.joinBtnText,
+                              styles.cancelBtnText,
                               {
                                 color:
-                                  isDark
-                                    ? '#93C5FD'
-                                    : '#2563EB',
+                                  colors.dangerText,
                               },
                             ]}
                           >
-                            Unirme al Partido
+                            Cancelar participación
                           </Text>
                         )}
                       </TouchableOpacity>
-                    ) : (
-                      /* ======================================
-                         EVENTO LLENO
-                      ====================================== */
+                    </>
+                  ) : item.cupos >
+                    0 ? (
 
-                      <View
-                        style={[
-                          styles.fullBadge,
-                          {
-                            backgroundColor:
-                              isDark
-                                ? '#3F1D1D'
-                                : '#FEE2E2',
-                          },
-                        ]}
-                      >
+                    // ========================================
+                    // UNIRSE
+                    // ========================================
+
+                    <TouchableOpacity
+                      style={[
+                        styles.joinBtn,
+                        {
+                          backgroundColor:
+                            isDark
+                              ? '#1E3A5F'
+                              : '#EFF6FF',
+
+                          borderColor:
+                            isDark
+                              ? '#334E68'
+                              : '#DBEAFE',
+                        },
+                      ]}
+                      disabled={
+                        eventoProcesando ===
+                        item.id
+                      }
+                      onPress={() =>
+                        handleUnirse(
+                          item.id
+                        )
+                      }
+                    >
+                      {eventoProcesando ===
+                      item.id ? (
+                        <ActivityIndicator
+                          size="small"
+                          color={
+                            isDark
+                              ? '#93C5FD'
+                              : '#2563EB'
+                          }
+                        />
+                      ) : (
                         <Text
                           style={[
-                            styles.fullBadgeText,
+                            styles.joinBtnText,
                             {
                               color:
                                 isDark
-                                  ? '#FCA5A5'
-                                  : '#B91C1C',
+                                  ? '#93C5FD'
+                                  : '#2563EB',
                             },
                           ]}
                         >
-                          Partido completo
+                          Unirme al Partido
                         </Text>
-                      </View>
-                    )}
-                  </View>
-                )
+                      )}
+                    </TouchableOpacity>
+                  ) : (
+
+                    // ========================================
+                    // EVENTO LLENO
+                    // ========================================
+
+                    <View
+                      style={[
+                        styles.fullBadge,
+                        {
+                          backgroundColor:
+                            isDark
+                              ? '#3F1D1D'
+                              : '#FEE2E2',
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.fullBadgeText,
+                          {
+                            color:
+                              isDark
+                                ? '#FCA5A5'
+                                : '#B91C1C',
+                          },
+                        ]}
+                      >
+                        Partido completo
+                      </Text>
+                    </View>
+                  )}
+                </View>
               )
             )}
           </ScrollView>
@@ -1623,6 +2234,7 @@ export default function EventosScreen() {
               true
             )
           }
+          accessibilityLabel="Crear nuevo partido"
         >
           <Text
             style={
@@ -1664,7 +2276,9 @@ export default function EventosScreen() {
                 },
               ]}
             >
-              {/* HEADER MODAL */}
+              {/* ============================================
+                  HEADER MODAL
+              ============================================ */}
 
               <View
                 style={
@@ -1690,6 +2304,9 @@ export default function EventosScreen() {
                       false
                     )
                   }
+                  disabled={
+                    guardandoEvento
+                  }
                 >
                   <Text
                     style={[
@@ -1697,6 +2314,11 @@ export default function EventosScreen() {
                       {
                         color:
                           colors.secondaryText,
+
+                        opacity:
+                          guardandoEvento
+                            ? 0.5
+                            : 1,
                       },
                     ]}
                   >
@@ -1706,7 +2328,9 @@ export default function EventosScreen() {
               </View>
 
 
-              {/* TÍTULO */}
+              {/* ============================================
+                  TÍTULO
+              ============================================ */}
 
               <TextInput
                 style={[
@@ -1732,10 +2356,15 @@ export default function EventosScreen() {
                 onChangeText={
                   setTitulo
                 }
+                editable={
+                  !guardandoEvento
+                }
               />
 
 
-              {/* DEPORTE */}
+              {/* ============================================
+                  DEPORTE
+              ============================================ */}
 
               <View
                 style={
@@ -1775,8 +2404,16 @@ export default function EventosScreen() {
                               activo
                                 ? colors.primary
                                 : colors.border,
+
+                            opacity:
+                              guardandoEvento
+                                ? 0.6
+                                : 1,
                           },
                         ]}
+                        disabled={
+                          guardandoEvento
+                        }
                         onPress={() =>
                           setDeporte(
                             dep
@@ -1808,7 +2445,9 @@ export default function EventosScreen() {
               </View>
 
 
-              {/* LUGAR */}
+              {/* ============================================
+                  LUGAR
+              ============================================ */}
 
               <TextInput
                 style={[
@@ -1834,10 +2473,15 @@ export default function EventosScreen() {
                 onChangeText={
                   setLugar
                 }
+                editable={
+                  !guardandoEvento
+                }
               />
 
 
-              {/* FECHA */}
+              {/* ============================================
+                  FECHA
+              ============================================ */}
 
               <TextInput
                 style={[
@@ -1863,10 +2507,15 @@ export default function EventosScreen() {
                 onChangeText={
                   setFecha
                 }
+                editable={
+                  !guardandoEvento
+                }
               />
 
 
-              {/* CUPOS */}
+              {/* ============================================
+                  CUPOS
+              ============================================ */}
 
               <TextInput
                 style={[
@@ -1893,10 +2542,15 @@ export default function EventosScreen() {
                   setCupos
                 }
                 keyboardType="numeric"
+                editable={
+                  !guardandoEvento
+                }
               />
 
 
-              {/* PUBLICAR */}
+              {/* ============================================
+                  PUBLICAR
+              ============================================ */}
 
               <TouchableOpacity
                 style={[
@@ -2082,19 +2736,131 @@ const styles =
 
 
     // ========================================================
+    // RF18 - ESTADO VACÍO / ERROR
+    // ========================================================
+
+    emptyScrollContent: {
+      flexGrow: 1,
+
+      justifyContent:
+        'center',
+
+      paddingBottom: 80,
+    },
+
+
+    emptyCard: {
+      width:
+        '100%',
+
+      maxWidth:
+        520,
+
+      alignSelf:
+        'center',
+
+      alignItems:
+        'center',
+
+      borderWidth:
+        1,
+
+      borderRadius:
+        16,
+
+      paddingHorizontal:
+        22,
+
+      paddingVertical:
+        28,
+    },
+
+
+    emptyIcon: {
+      fontSize:
+        46,
+
+      marginBottom:
+        12,
+    },
+
+
+    emptyTitle: {
+      fontSize:
+        18,
+
+      fontWeight:
+        'bold',
+
+      textAlign:
+        'center',
+    },
+
+
+    emptyDescription: {
+      fontSize:
+        13,
+
+      lineHeight:
+        20,
+
+      textAlign:
+        'center',
+
+      marginTop:
+        8,
+
+      maxWidth:
+        420,
+    },
+
+
+    emptyActionButton: {
+      marginTop:
+        18,
+
+      paddingHorizontal:
+        20,
+
+      paddingVertical:
+        11,
+
+      borderRadius:
+        10,
+    },
+
+
+    emptyActionButtonText: {
+      color:
+        '#FFFFFF',
+
+      fontSize:
+        13,
+
+      fontWeight:
+        'bold',
+    },
+
+
+    // ========================================================
     // EVENTOS
     // ========================================================
 
     eventCard: {
-      padding: 16,
+      padding:
+        16,
 
-      borderRadius: 14,
+      borderRadius:
+        14,
 
-      borderWidth: 1,
+      borderWidth:
+        1,
 
-      marginBottom: 12,
+      marginBottom:
+        12,
 
-      gap: 4,
+      gap:
+        4,
     },
 
 
@@ -2108,12 +2874,14 @@ const styles =
       alignItems:
         'center',
 
-      gap: 8,
+      gap:
+        8,
     },
 
 
     eventTag: {
-      fontSize: 11,
+      fontSize:
+        11,
 
       fontWeight:
         'bold',
@@ -2121,7 +2889,8 @@ const styles =
 
 
     eventSlots: {
-      fontSize: 12,
+      fontSize:
+        12,
 
       color:
         '#16A34A',
@@ -2132,7 +2901,8 @@ const styles =
 
 
     eventTitle: {
-      fontSize: 16,
+      fontSize:
+        16,
 
       fontWeight:
         'bold',
@@ -2140,7 +2910,8 @@ const styles =
 
 
     eventDetails: {
-      fontSize: 13,
+      fontSize:
+        13,
     },
 
 
@@ -2149,21 +2920,26 @@ const styles =
     // ========================================================
 
     detailButton: {
-      paddingVertical: 9,
+      paddingVertical:
+        9,
 
-      borderRadius: 8,
+      borderRadius:
+        8,
 
-      borderWidth: 1,
+      borderWidth:
+        1,
 
       alignItems:
         'center',
 
-      marginTop: 8,
+      marginTop:
+        8,
     },
 
 
     detailButtonText: {
-      fontSize: 13,
+      fontSize:
+        13,
 
       fontWeight:
         '700',
@@ -2175,16 +2951,20 @@ const styles =
     // ========================================================
 
     joinBtn: {
-      paddingVertical: 10,
+      paddingVertical:
+        10,
 
-      borderRadius: 8,
+      borderRadius:
+        8,
 
       alignItems:
         'center',
 
-      marginTop: 8,
+      marginTop:
+        8,
 
-      borderWidth: 1,
+      borderWidth:
+        1,
     },
 
 
@@ -2192,7 +2972,8 @@ const styles =
       fontWeight:
         'bold',
 
-      fontSize: 13,
+      fontSize:
+        13,
     },
 
 
@@ -2201,14 +2982,17 @@ const styles =
     // ========================================================
 
     joinedBadge: {
-      paddingVertical: 8,
+      paddingVertical:
+        8,
 
-      borderRadius: 8,
+      borderRadius:
+        8,
 
       alignItems:
         'center',
 
-      marginTop: 8,
+      marginTop:
+        8,
     },
 
 
@@ -2216,7 +3000,8 @@ const styles =
       fontWeight:
         'bold',
 
-      fontSize: 13,
+      fontSize:
+        13,
     },
 
 
@@ -2225,14 +3010,17 @@ const styles =
     // ========================================================
 
     organizerBadge: {
-      paddingVertical: 8,
+      paddingVertical:
+        8,
 
-      borderRadius: 8,
+      borderRadius:
+        8,
 
       alignItems:
         'center',
 
-      marginTop: 8,
+      marginTop:
+        8,
     },
 
 
@@ -2240,7 +3028,8 @@ const styles =
       fontWeight:
         'bold',
 
-      fontSize: 13,
+      fontSize:
+        13,
     },
 
 
@@ -2249,16 +3038,20 @@ const styles =
     // ========================================================
 
     cancelBtn: {
-      paddingVertical: 9,
+      paddingVertical:
+        9,
 
-      borderRadius: 8,
+      borderRadius:
+        8,
 
       alignItems:
         'center',
 
-      marginTop: 6,
+      marginTop:
+        6,
 
-      borderWidth: 1,
+      borderWidth:
+        1,
     },
 
 
@@ -2266,7 +3059,8 @@ const styles =
       fontWeight:
         '600',
 
-      fontSize: 13,
+      fontSize:
+        13,
     },
 
 
@@ -2275,14 +3069,17 @@ const styles =
     // ========================================================
 
     fullBadge: {
-      paddingVertical: 8,
+      paddingVertical:
+        8,
 
-      borderRadius: 8,
+      borderRadius:
+        8,
 
       alignItems:
         'center',
 
-      marginTop: 8,
+      marginTop:
+        8,
     },
 
 
@@ -2290,15 +3087,8 @@ const styles =
       fontWeight:
         'bold',
 
-      fontSize: 13,
-    },
-
-
-    emptyText: {
-      textAlign:
-        'center',
-
-      marginTop: 40,
+      fontSize:
+        13,
     },
 
 
@@ -2310,15 +3100,20 @@ const styles =
       position:
         'absolute',
 
-      right: 20,
+      right:
+        20,
 
-      bottom: 20,
+      bottom:
+        20,
 
-      width: 56,
+      width:
+        56,
 
-      height: 56,
+      height:
+        56,
 
-      borderRadius: 28,
+      borderRadius:
+        28,
 
       justifyContent:
         'center',
@@ -2326,20 +3121,25 @@ const styles =
       alignItems:
         'center',
 
-      elevation: 5,
+      elevation:
+        5,
 
       shadowColor:
         '#000000',
 
       shadowOffset: {
-        width: 0,
+        width:
+          0,
 
-        height: 3,
+        height:
+          3,
       },
 
-      shadowOpacity: 0.2,
+      shadowOpacity:
+        0.2,
 
-      shadowRadius: 5,
+      shadowRadius:
+        5,
     },
 
 
@@ -2347,12 +3147,14 @@ const styles =
       color:
         '#FFFFFF',
 
-      fontSize: 28,
+      fontSize:
+        28,
 
       fontWeight:
         'bold',
 
-      lineHeight: 30,
+      lineHeight:
+        30,
     },
 
 
@@ -2361,7 +3163,8 @@ const styles =
     // ========================================================
 
     modalOverlay: {
-      flex: 1,
+      flex:
+        1,
 
       backgroundColor:
         'rgba(0,0,0,0.55)',
@@ -2378,9 +3181,11 @@ const styles =
       borderTopRightRadius:
         20,
 
-      padding: 20,
+      padding:
+        20,
 
-      gap: 12,
+      gap:
+        12,
     },
 
 
@@ -2394,12 +3199,14 @@ const styles =
       alignItems:
         'center',
 
-      marginBottom: 6,
+      marginBottom:
+        6,
     },
 
 
     modalTitle: {
-      fontSize: 18,
+      fontSize:
+        18,
 
       fontWeight:
         'bold',
@@ -2407,18 +3214,23 @@ const styles =
 
 
     closeButton: {
-      fontSize: 18,
+      fontSize:
+        18,
     },
 
 
     input: {
-      borderWidth: 1,
+      borderWidth:
+        1,
 
-      padding: 12,
+      padding:
+        12,
 
-      borderRadius: 10,
+      borderRadius:
+        10,
 
-      fontSize: 14,
+      fontSize:
+        14,
     },
 
 
@@ -2429,35 +3241,44 @@ const styles =
       flexWrap:
         'wrap',
 
-      gap: 6,
+      gap:
+        6,
     },
 
 
     depChip: {
-      paddingHorizontal: 12,
+      paddingHorizontal:
+        12,
 
-      paddingVertical: 6,
+      paddingVertical:
+        6,
 
-      borderRadius: 16,
+      borderRadius:
+        16,
 
-      borderWidth: 1,
+      borderWidth:
+        1,
     },
 
 
     depChipText: {
-      fontSize: 12,
+      fontSize:
+        12,
     },
 
 
     primaryButton: {
-      paddingVertical: 14,
+      paddingVertical:
+        14,
 
-      borderRadius: 10,
+      borderRadius:
+        10,
 
       alignItems:
         'center',
 
-      marginTop: 8,
+      marginTop:
+        8,
     },
 
 
@@ -2468,6 +3289,7 @@ const styles =
       fontWeight:
         'bold',
 
-      fontSize: 15,
+      fontSize:
+        15,
     },
   });
