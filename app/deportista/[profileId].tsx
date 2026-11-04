@@ -80,6 +80,21 @@ interface DistanciaPerfil {
 }
 
 
+// Reseña recibida por el deportista calificado.
+
+interface ResenaItem {
+  stars: number;
+
+  comment: string | null;
+
+  rater_id: string;
+
+  created_at: string;
+
+  nombreAutor: string;
+}
+
+
 // ============================================================
 // DEPORTES
 // ============================================================
@@ -206,6 +221,38 @@ export default function DeportistaDetalleScreen() {
     setMismoNivel,
   ] =
     useState(false);
+
+
+  // ==========================================================
+  // ESTADOS DE REPUTACIÓN
+  // ==========================================================
+
+  const [
+    promedioEstrellas,
+    setPromedioEstrellas,
+  ] =
+    useState<number | null>(
+      null
+    );
+
+
+  const [
+    totalResenas,
+    setTotalResenas,
+  ] = useState(0);
+
+
+  const [
+    resenas,
+    setResenas,
+  ] =
+    useState<ResenaItem[]>([]);
+
+
+  const [
+    mostrandoResenas,
+    setMostrandoResenas,
+  ] = useState(false);
 
 
   // ==========================================================
@@ -464,6 +511,211 @@ export default function DeportistaDetalleScreen() {
             )
           : null
       );
+
+
+      // ------------------------------------------------------
+      // 6. REPUTACIÓN (CALIFICACIONES RECIBIDAS)
+      // ------------------------------------------------------
+      //
+      // Si la tabla profile_ratings todavía
+      // no existe, no rompemos el perfil.
+      //
+      // ------------------------------------------------------
+
+      try {
+        const {
+          data: calificaciones,
+          error:
+            calificacionesError,
+        } = await supabase
+          .from(
+            'profile_ratings'
+          )
+          .select(
+            `
+            stars,
+            comment,
+            rater_id,
+            created_at
+            `
+          )
+          .eq(
+            'rated_id',
+            profileId
+          )
+          .order(
+            'created_at',
+            {
+              ascending: false,
+            }
+          );
+
+
+        if (
+          calificacionesError
+        ) {
+          throw calificacionesError;
+        }
+
+
+        const lista =
+          calificaciones ??
+          [];
+
+
+        setTotalResenas(
+          lista.length
+        );
+
+
+        if (
+          lista.length >
+          0
+        ) {
+          const suma = lista.reduce(
+            (
+              acumulado,
+              item
+            ) =>
+              acumulado +
+              Number(
+                item.stars
+              ),
+            0
+          );
+
+
+          setPromedioEstrellas(
+            suma /
+              lista.length
+          );
+
+
+          // ------------------------------------------------
+          // NOMBRES DE LOS RATER
+          // ------------------------------------------------
+
+          const idsRaters =
+            lista.map(
+              (
+                item
+              ) =>
+                item.rater_id
+            );
+
+
+          const idUnicos =
+            Array.from(
+              new Set(
+                idsRaters
+              )
+            );
+
+
+          const {
+            data: ratersData,
+            error:
+              ratersError,
+          } = await supabase
+            .from(
+              'profiles'
+            )
+            .select(
+              `
+              id,
+              full_name
+              `
+            )
+            .in(
+              'id',
+              idUnicos
+            );
+
+
+          if (
+            ratersError
+          ) {
+            throw ratersError;
+          }
+
+
+          const nombrePorId:
+            Record<
+              string,
+              string
+            > = {};
+
+
+          (
+            ratersData ??
+            []
+          ).forEach(
+            (
+              item
+            ) => {
+              nombrePorId[
+                item.id
+              ] =
+                item.full_name ??
+                'Usuario FitMatch';
+            }
+          );
+
+
+          setResenas(
+            lista.map(
+              (
+                item
+              ) => ({
+                stars: Number(
+                  item.stars
+                ),
+
+                comment:
+                  item.comment,
+
+                rater_id:
+                  item.rater_id,
+
+                created_at:
+                  item.created_at,
+
+                nombreAutor:
+                  nombrePorId[
+                    item.rater_id
+                  ] ??
+                  'Usuario FitMatch',
+              })
+            )
+          );
+        } else {
+          setPromedioEstrellas(
+            null
+          );
+
+          setResenas([]);
+        }
+      } catch (
+        error: any
+      ) {
+        console.log(
+          'Error cargando calificaciones:',
+          error
+        );
+
+
+        // No interrumpimos el perfil.
+
+        setPromedioEstrellas(
+          null
+        );
+
+        setTotalResenas(
+          0
+        );
+
+        setResenas([]);
+      }
     } catch (
       error: any
     ) {
@@ -846,6 +1098,162 @@ export default function DeportistaDetalleScreen() {
           >
             📍 {obtenerTextoDistancia()}
           </Text>
+
+
+          {/* ==================================================
+              REPUTACIÓN
+          ================================================== */}
+
+          <Text
+            style={[
+              styles.reputacion,
+              {
+                color:
+                  colors.text,
+              },
+            ]}
+          >
+            {promedioEstrellas !==
+            null
+              ? `⭐ ${promedioEstrellas.toFixed(
+                  1
+                )} · ${totalResenas} reseña${
+                  totalResenas ===
+                  1
+                    ? ''
+                    : 's'
+                }`
+              : 'Sin calificaciones aún'}
+          </Text>
+
+
+          {totalResenas >
+            0 && (
+            <TouchableOpacity
+              style={[
+                styles.resenasToggle,
+                {
+                  borderColor:
+                    colors.border,
+
+                  backgroundColor:
+                    colors.background,
+                },
+              ]}
+              onPress={() =>
+                setMostrandoResenas(
+                  !mostrandoResenas
+                )
+              }
+            >
+              <Text
+                style={[
+                  styles.resenasToggleText,
+                  {
+                    color:
+                      colors.primary,
+                  },
+                ]}
+              >
+                {mostrandoResenas
+                  ? 'Ocultar reseñas'
+                  : 'Ver reseñas'}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+
+          {mostrandoResenas && (
+            <View
+              style={[
+                styles.resenasContainer,
+                {
+                  borderColor:
+                    colors.border,
+                },
+              ]}
+            >
+              {resenas.slice(
+                0,
+                5
+              ).length >
+              0 ? (
+                resenas
+                  .slice(
+                    0,
+                    5
+                  )
+                  .map(
+                    (
+                      resena,
+                      indice
+                    ) => (
+                      <View
+                        key={
+                          indice
+                        }
+
+                        style={[
+                          styles.resenaFila,
+                          {
+                            borderBottomColor:
+                              colors.border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.resenaAutor,
+                            {
+                              color:
+                                colors.text,
+                            },
+                          ]}
+                        >
+                          {
+                            resena.nombreAutor
+                          }
+
+                          {'  '}
+
+                          {resena.stars > 0
+                            ? '⭐'.repeat(
+                                resena.stars
+                              )
+                            : ''}
+                        </Text>
+
+
+                        <Text
+                          style={[
+                            styles.resenaComentario,
+                            {
+                              color:
+                                colors.secondaryText,
+                            },
+                          ]}
+                        >
+                          {resena.comment ??
+                            'Sin comentario.'}
+                        </Text>
+                      </View>
+                    )
+                  )
+              ) : (
+                <Text
+                  style={[
+                    styles.resenaComentario,
+                    {
+                      color:
+                        colors.secondaryText,
+                    },
+                  ]}
+                >
+                  Sin reseñas para mostrar.
+                </Text>
+              )}
+            </View>
+          )}
 
 
           {/* ==================================================
@@ -1329,6 +1737,79 @@ const styles =
 
       textAlign:
         'center',
+    },
+
+
+    // ========================================================
+    // REPUTACIÓN
+    // ========================================================
+
+    reputacion: {
+      fontSize: 15,
+
+      fontWeight:
+        '700',
+
+      textAlign:
+        'center',
+
+      marginTop: 8,
+    },
+
+
+    resenasToggle: {
+      marginTop: 10,
+
+      paddingVertical: 8,
+
+      paddingHorizontal: 16,
+
+      borderRadius: 10,
+
+      borderWidth: 1,
+    },
+
+
+    resenasToggleText: {
+      fontSize: 13,
+
+      fontWeight:
+        '700',
+    },
+
+
+    resenasContainer: {
+      width: '100%',
+
+      borderWidth: 1,
+
+      borderRadius: 12,
+
+      padding: 12,
+
+      marginTop: 12,
+    },
+
+
+    resenaFila: {
+      paddingVertical: 8,
+
+      borderBottomWidth: 1,
+    },
+
+
+    resenaAutor: {
+      fontSize: 14,
+
+      fontWeight:
+        '600',
+    },
+
+
+    resenaComentario: {
+      fontSize: 13,
+
+      marginTop: 3,
     },
 
 

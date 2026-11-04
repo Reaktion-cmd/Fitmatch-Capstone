@@ -19,6 +19,7 @@
 
 import React, {
   useCallback,
+  useRef,
   useState,
 } from 'react';
 
@@ -30,6 +31,8 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  PanResponder,
+  Image,
 } from 'react-native';
 
 import {
@@ -67,6 +70,8 @@ interface PerfilMatch {
 
   skill_level: string | null;
 
+  avatar_url?: string | null;
+
   deportesEnComun: string[];
 
   mismoNivel: boolean;
@@ -81,6 +86,439 @@ interface DistanciaPerfil {
   target_id: string;
 
   distance_km: number;
+}
+
+
+interface UsuarioRadar {
+  id: string;
+
+  full_name: string | null;
+
+  distanceKm: number | null;
+}
+
+
+// ============================================================
+// CONSTANTES DE RADAR Y SLIDERS
+// ============================================================
+
+const RADAR_TAMANO = 240;
+
+const RADAR_CENTRO = 120;
+
+// Radio máximo al que se dibuja un punto,
+// medido desde el centro del círculo.
+
+const RADAR_RADIO_MAXIMO = 112;
+
+const TAMANO_PUNTO_RADAR = 12;
+
+const TAMANO_PUNTO_YO = 16;
+
+const ANCHO_SLIDER = 240;
+
+const TAMANO_PERILLA = 26;
+
+
+// ============================================================
+// ÁNGULO ESTABLE POR USUARIO (HASH DEL ID)
+// ============================================================
+//
+// La RPC solo devuelve distance_km (por privacidad, no hay
+// coordenadas). El ángulo se genera de forma determinista a
+// partir del target_id para que entre renders sea estable.
+
+function hashAngulo(
+  id: string
+) {
+  const hash = [...id].reduce(
+    (
+      acumulado,
+      caracter
+    ) =>
+      acumulado +
+      caracter.charCodeAt(
+        0
+      ),
+    0
+  );
+
+
+  return (
+    (hash % 360) *
+    Math.PI /
+    180
+  );
+}
+
+
+// ============================================================
+// ACOTAR VALOR
+// ============================================================
+
+function acotar(
+  valor: number,
+  minimo: number,
+  maximo: number
+) {
+  return Math.min(
+    maximo,
+    Math.max(
+      minimo,
+      valor
+    )
+  );
+}
+
+
+// ============================================================
+// COMPONENTE INTERNO: LÍNEA DESLIZANTE (PANRESPONDER)
+// ============================================================
+//
+// - Modo 'rango': dos perillas arrastrables (edad mín/máx).
+// - Modo 'único': una sola perilla (radio de búsqueda).
+//
+// Las perillas no se cruzan: la izquierda respeta max - 1
+// y la derecha respeta min + 1.
+
+interface SliderLineProps {
+  valorMin: number;
+
+  valorMax: number;
+
+  escalaMin: number;
+
+  escalaMax: number;
+
+  esRango: boolean;
+
+  onCambiar: (
+    nuevoMin: number,
+    nuevoMax: number
+  ) => void;
+}
+
+
+function SliderLine(
+  {
+    valorMin,
+    valorMax,
+    escalaMin,
+    escalaMax,
+    esRango,
+    onCambiar,
+  }: SliderLineProps
+) {
+  const {
+    colors,
+  } = useTheme();
+
+
+  // Últimos valores conocidos, accesibles
+  // desde los callbacks del gesto.
+
+  const valoresRef =
+    useRef({
+      min: valorMin,
+
+      max: valorMax,
+    });
+
+
+  valoresRef.current = {
+    min: valorMin,
+
+    max: valorMax,
+  };
+
+
+  // Valor del knob al iniciar el arrastre.
+
+  const inicioRef =
+    useRef(0);
+
+
+  function valorAPosicion(
+    valor: number
+  ) {
+    const factor =
+      (valor - escalaMin) /
+      (
+        escalaMax -
+        escalaMin
+      );
+
+
+    return acotar(
+      factor *
+        ANCHO_SLIDER,
+      0,
+      ANCHO_SLIDER
+    );
+  }
+
+
+  function nuevoValorConDelta(
+    deltaPx: number,
+    valorInicial: number
+  ) {
+    const deltaValor =
+      (deltaPx / ANCHO_SLIDER) *
+      (
+        escalaMax -
+        escalaMin
+      );
+
+
+    return Math.round(
+      valorInicial +
+      deltaValor
+    );
+  }
+
+
+  // Perilla IZQUIERDA (solo modo rango).
+
+  const panIzquierda =
+    PanResponder.create({
+      onStartShouldSetPanResponderCapture: () =>
+        true,
+
+      onMoveShouldSetPanResponderCapture: () =>
+        true,
+
+      onPanResponderGrant: () => {
+        inicioRef.current =
+          valoresRef.current.min;
+      },
+
+      onPanResponderMove: (
+        _evento,
+        gestos
+      ) => {
+        let nuevo =
+          nuevoValorConDelta(
+            gestos.dx,
+            inicioRef.current
+          );
+
+
+        nuevo = acotar(
+          nuevo,
+          escalaMin,
+          valoresRef.current.max -
+            1
+        );
+
+
+        onCambiar(
+          nuevo,
+          valoresRef.current.max
+        );
+      },
+    });
+
+
+  // Perilla DERECHA (solo modo rango).
+
+  const panDerecha =
+    PanResponder.create({
+      onStartShouldSetPanResponderCapture: () =>
+        true,
+
+      onMoveShouldSetPanResponderCapture: () =>
+        true,
+
+      onPanResponderGrant: () => {
+        inicioRef.current =
+          valoresRef.current.max;
+      },
+
+      onPanResponderMove: (
+        _evento,
+        gestos
+      ) => {
+        let nuevo =
+          nuevoValorConDelta(
+            gestos.dx,
+            inicioRef.current
+          );
+
+
+        nuevo = acotar(
+          nuevo,
+          valoresRef.current.min +
+            1,
+          escalaMax
+        );
+
+
+        onCambiar(
+          valoresRef.current.min,
+          nuevo
+        );
+      },
+    });
+
+
+  // Perilla ÚNICA (modo slider simple).
+
+  const panUnico =
+    PanResponder.create({
+      onStartShouldSetPanResponderCapture: () =>
+        true,
+
+      onMoveShouldSetPanResponderCapture: () =>
+        true,
+
+      onPanResponderGrant: () => {
+        inicioRef.current =
+          valoresRef.current.max;
+      },
+
+      onPanResponderMove: (
+        _evento,
+        gestos
+      ) => {
+        let nuevo =
+          nuevoValorConDelta(
+            gestos.dx,
+            inicioRef.current
+          );
+
+
+        nuevo = acotar(
+          nuevo,
+          escalaMin,
+          escalaMax
+        );
+
+
+        onCambiar(
+          nuevo,
+          nuevo
+        );
+      },
+    });
+
+
+  const posMin =
+    valorAPosicion(
+      valorMin
+    );
+
+
+  const posMax =
+    valorAPosicion(
+      valorMax
+    );
+
+
+  return (
+    <View
+      style={
+        styles.sliderWrap
+      }
+    >
+      {/* PISTA */}
+
+      <View
+        style={[
+          styles.sliderTrack,
+          {
+            backgroundColor:
+              colors.border,
+          },
+        ]}
+      />
+
+
+      {/* TRAMO RESALTADO ENTRE KNOBS */}
+
+      <View
+        style={[
+          styles.sliderTrackActiva,
+          {
+            backgroundColor:
+              colors.primary,
+
+            left:
+              TAMANO_PERILLA /
+                2 +
+              posMin,
+
+            width: Math.max(
+              0,
+              posMax -
+                posMin
+            ),
+          },
+        ]}
+      />
+
+
+      {/* PERILLA IZQUIERDA (RANGO) */}
+
+      {esRango && (
+        <View
+          style={[
+            styles.sliderPerilla,
+            {
+              backgroundColor:
+                colors.card,
+
+              borderColor:
+                colors.primary,
+
+              left: posMin,
+            },
+          ]}
+          {...panIzquierda.panHandlers}
+        >
+          <View
+            style={[
+              styles.sliderPerillaPunto,
+              {
+                backgroundColor:
+                  colors.primary,
+              },
+            ]}
+          />
+        </View>
+      )}
+
+
+      {/* PERILLA DERECHA (RANGO) / ÚNICA (SIMPLE) */}
+
+      <View
+        style={[
+          styles.sliderPerilla,
+          {
+            backgroundColor:
+              colors.card,
+
+            borderColor:
+              colors.primary,
+
+            left: posMax,
+          },
+        ]}
+        {...(esRango
+          ? panDerecha.panHandlers
+          : panUnico.panHandlers)}
+      >
+        <View
+          style={[
+            styles.sliderPerillaPunto,
+            {
+              backgroundColor:
+                colors.primary,
+            },
+          ]}
+        />
+      </View>
+    </View>
+  );
 }
 
 
@@ -182,14 +620,130 @@ export default function MatchScreen() {
   ] = useState(25);
 
 
+  // Panel deslizante de preferencias.
+
+  const [
+    panelFiltrosAbierto,
+    setPanelFiltrosAbierto,
+  ] = useState(false);
+
+
+  // Valores actuales de los sliders (16 - 100 años).
+
+  const [
+    edadMin,
+    setEdadMin,
+  ] = useState(18);
+
+
+  const [
+    edadMax,
+    setEdadMax,
+  ] = useState(60);
+
+
+  // Guardado de preferencias.
+
+  const [
+    guardandoPreferencias,
+    setGuardandoPreferencias,
+  ] = useState(false);
+
+
+  // La RPC devolvió vacío (ubicación manual / sin GPS).
+
+  const [
+    sinUbicacion,
+    setSinUbicacion,
+  ] = useState(false);
+
+
+  // Datos para la vista radar (todos los no evaluados).
+
+  const [
+    usuariosRadar,
+    setUsuariosRadar,
+  ] = useState<UsuarioRadar[]>([]);
+
+
   // ==========================================================
-  // PERFIL ACTUAL
+  // FILTROS EN VIVO SOBRE EL MAZO (EDAD + RADIO)
   // ==========================================================
 
+  function estaDentroDelRadioEnVivo(
+    perfil: PerfilMatch
+  ) {
+    // 0 = sin límite de distancia.
+
+    if (
+      radioBusqueda ===
+      0
+    ) {
+      return true;
+    }
+
+
+    if (
+      perfil.distanceKm ===
+      null
+    ) {
+      return false;
+    }
+
+
+    return (
+      perfil.distanceKm <=
+      radioBusqueda
+    );
+  }
+
+
+  function estaDentroDelRangoDeEdadEnVivo(
+    perfil: PerfilMatch
+  ) {
+    // Sin edad registrada no se puede
+    // comparar: no se oculta.
+
+    if (
+      perfil.age ===
+      null
+    ) {
+      return true;
+    }
+
+
+    return (
+      perfil.age >=
+        edadMin &&
+      perfil.age <=
+        edadMax
+    );
+  }
+
+
+  const perfilesVisibles =
+    perfiles.filter(
+      (
+        perfil
+      ) =>
+        estaDentroDelRadioEnVivo(
+          perfil
+        ) &&
+        estaDentroDelRangoDeEdadEnVivo(
+          perfil
+        )
+    );
+
+
   const perfilActual =
-    perfiles.length > 0
-      ? perfiles[0]
+    perfilesVisibles.length > 0
+      ? perfilesVisibles[0]
       : null;
+
+
+  const deportistasOcultosPorFiltros =
+    perfiles.length -
+    perfilesVisibles.length;
 
 
   // ==========================================================
@@ -267,7 +821,10 @@ export default function MatchScreen() {
           .select(`
             sports,
             skill_level,
-            search_radius_km
+            search_radius_km,
+            age_min,
+            age_max,
+            avatar_url
           `)
           .eq(
             'id',
@@ -295,6 +852,44 @@ export default function MatchScreen() {
 
 
       // ------------------------------------------------------
+      // 2.5 EDAD GUARDADA (VALORES INICIALES DEL SLIDER)
+      // ------------------------------------------------------
+
+      const edadMinGuardada =
+        typeof miPerfil
+          ?.age_min ===
+          'number'
+          ? acotar(
+              miPerfil.age_min,
+              16,
+              100
+            )
+          : 18;
+
+
+      const edadMaxGuardada =
+        typeof miPerfil
+          ?.age_max ===
+          'number'
+          ? acotar(
+              miPerfil.age_max,
+              16,
+              100
+            )
+          : 60;
+
+
+      setEdadMin(
+        edadMinGuardada
+      );
+
+
+      setEdadMax(
+        edadMaxGuardada
+      );
+
+
+      // ------------------------------------------------------
       // 3. RADIO DE BÚSQUEDA
       // ------------------------------------------------------
 
@@ -306,8 +901,15 @@ export default function MatchScreen() {
           : 25;
 
 
+      // El slider va de 0 (sin límite)
+      // a 100 km.
+
       setRadioBusqueda(
-        radioActual
+        acotar(
+          radioActual,
+          0,
+          100
+        )
       );
 
 
@@ -330,6 +932,16 @@ export default function MatchScreen() {
       if (distanciasError) {
         throw distanciasError;
       }
+
+
+      // El RPC devuelve vacío cuando el
+      // usuario tiene ubicación 'manual'
+      // o sin GPS.
+
+      setSinUbicacion(
+        (distanciasData ?? []).length ===
+          0
+      );
 
 
       const mapaDistancias =
@@ -423,7 +1035,8 @@ export default function MatchScreen() {
             age,
             bio,
             sports,
-            skill_level
+            skill_level,
+            avatar_url
           `)
           .neq(
             'id',
@@ -452,6 +1065,33 @@ export default function MatchScreen() {
               perfil.id
             )
         );
+
+
+      // ------------------------------------------------------
+      // 7.5 DATOS PARA LA VISTA RADAR
+      //     (todos los no evaluados, incluyendo
+      //     los que quedan fuera del radio)
+      // ------------------------------------------------------
+
+      setUsuariosRadar(
+        perfilesSinEvaluar.map(
+          (
+            perfil
+          ) => ({
+            id:
+              perfil.id,
+
+            full_name:
+              perfil.full_name,
+
+            distanceKm:
+              mapaDistancias.get(
+                perfil.id
+              ) ??
+              null,
+          })
+        )
+      );
 
 
       // ------------------------------------------------------
@@ -500,11 +1140,41 @@ export default function MatchScreen() {
 
 
       // ------------------------------------------------------
+      // 8.5 FILTRAR POR EDAD PREFERIDA
+      // ------------------------------------------------------
+
+      const perfilesEnRangoDeEdad =
+        perfilesDentroDelRadio.filter(
+          (
+            perfil
+          ) => {
+            // Sin edad registrada no se
+            // puede comparar: pasa.
+
+            if (
+              perfil.age ===
+              null
+            ) {
+              return true;
+            }
+
+
+            return (
+              perfil.age >=
+                edadMinGuardada &&
+              perfil.age <=
+                edadMaxGuardada
+            );
+          }
+        );
+
+
+      // ------------------------------------------------------
       // 9. AFINIDAD
       // ------------------------------------------------------
 
       const perfilesConAfinidad: PerfilMatch[] =
-        perfilesDentroDelRadio.map(
+        perfilesEnRangoDeEdad.map(
           (
             perfil
           ) => {
@@ -579,6 +1249,9 @@ export default function MatchScreen() {
 
               skill_level:
                 perfil.skill_level,
+
+              avatar_url:
+                perfil.avatar_url,
 
               deportesEnComun,
 
@@ -983,6 +1656,103 @@ export default function MatchScreen() {
 
 
   // ==========================================================
+  // GUARDAR PREFERENCIAS DEL PANEL
+  // ==========================================================
+
+  async function guardarPreferencias() {
+    try {
+      setGuardandoPreferencias(
+        true
+      );
+
+
+      const {
+        data: {
+          user,
+        },
+      } =
+        await supabase.auth.getUser();
+
+
+      if (!user) {
+        throw new Error(
+          'Sesión no encontrada.'
+        );
+      }
+
+
+      const {
+        error,
+      } =
+        await supabase
+          .from(
+            'profiles'
+          )
+          .update({
+            age_min:
+              Math.round(
+                edadMin
+              ),
+
+            age_max:
+              Math.round(
+                edadMax
+              ),
+
+            search_radius_km:
+              Math.round(
+                radioBusqueda
+              ),
+          })
+          .eq(
+            'id',
+            user.id
+          );
+
+
+      if (error) {
+        throw error;
+      }
+
+
+      setPanelFiltrosAbierto(
+        false
+      );
+
+
+      Alert.alert(
+        '✅ Preferencias guardadas',
+        'Se actualizaron tu rango de edad y radio de búsqueda.'
+      );
+
+
+      // Recargar el mazo con los
+      // nuevos valores.
+
+      await cargarPerfiles();
+    } catch (
+      error: any
+    ) {
+      console.log(
+        'Error guardando preferencias:',
+        error
+      );
+
+
+      Alert.alert(
+        'Error',
+        error?.message ??
+          'No se pudieron guardar las preferencias.'
+      );
+    } finally {
+      setGuardandoPreferencias(
+        false
+      );
+    }
+  }
+
+
+  // ==========================================================
   // CARGANDO
   // ==========================================================
 
@@ -1153,6 +1923,155 @@ export default function MatchScreen() {
 
 
   // ==========================================================
+  // PUNTOS PARA LA VISTA RADAR
+  // ==========================================================
+  //
+  // Distancia real desde la RPC + ángulo determinista
+  // generado con un hash del id (privacidad: no hay
+  // coordenadas reales).
+
+  const puntosRadar: Array<{
+    id: string;
+
+    full_name: string | null;
+
+    top: number;
+
+    left: number;
+
+    opacidad: number;
+
+    dentro: boolean;
+
+    distanceKm: number;
+  }> = [];
+
+
+  usuariosRadar.forEach(
+    (
+      usuario
+    ) => {
+      // Sin distancia conocida, el punto
+      // no se dibuja.
+
+      if (
+        usuario.distanceKm ===
+        null
+      ) {
+        return;
+      }
+
+
+      const dentro =
+        radioBusqueda ===
+          0 ||
+        usuario.distanceKm <=
+          radioBusqueda;
+
+
+      let factor: number;
+
+
+      if (
+        dentro
+      ) {
+        // Radio 0 = sin límite: se usa
+        // 100 km como escala visual.
+
+        factor =
+          radioBusqueda ===
+          0
+            ? Math.min(
+                usuario.distanceKm /
+                  100,
+                1
+              )
+            : usuario.distanceKm /
+              radioBusqueda;
+      } else {
+        // Fuera de rango: borde exterior.
+
+        factor = 1;
+      }
+
+
+      const radioPunto =
+        RADAR_RADIO_MAXIMO *
+        factor;
+
+
+      const angulo =
+        hashAngulo(
+          usuario.id
+        );
+
+
+      const centroX =
+        RADAR_CENTRO +
+        radioPunto *
+          Math.sin(
+            angulo
+          );
+
+
+      const centroY =
+        RADAR_CENTRO -
+        radioPunto *
+          Math.cos(
+            angulo
+          );
+
+
+      puntosRadar.push({
+        id:
+          usuario.id,
+
+        full_name:
+          usuario.full_name,
+
+        top:
+          centroY -
+          TAMANO_PUNTO_RADAR /
+            2,
+
+        left:
+          centroX -
+          TAMANO_PUNTO_RADAR /
+            2,
+
+        opacidad: dentro
+          ? Math.max(
+              0.45,
+              1 -
+                factor *
+                  0.45
+            )
+          : 0.3,
+
+        dentro,
+
+        distanceKm:
+          usuario.distanceKm,
+      });
+    }
+  );
+
+
+  const puntosDentroDelRadio =
+    puntosRadar.filter(
+      (
+        punto
+      ) =>
+        punto.dentro
+    ).length;
+
+
+  const puntosFueraDelRadio =
+    puntosRadar.length -
+    puntosDentroDelRadio;
+
+
+  // ==========================================================
   // INTERFAZ
   // ==========================================================
 
@@ -1183,6 +2102,40 @@ export default function MatchScreen() {
             styles.headerContainer
           }
         >
+          {/* ==============================================
+              BOTÓN FILTROS (ESQUINA SUPERIOR)
+          ============================================== */}
+
+          <TouchableOpacity
+            style={[
+              styles.filterButton,
+              {
+                backgroundColor:
+                  colors.card,
+
+                borderColor:
+                  colors.border,
+              },
+            ]}
+            onPress={() =>
+              setPanelFiltrosAbierto(
+                !panelFiltrosAbierto
+              )
+            }
+            accessibilityLabel="Abrir preferencias de match"
+          >
+            <Text
+              style={
+                styles.filterButtonEmoji
+              }
+            >
+              {panelFiltrosAbierto
+                ? '✕'
+                : '⚙️'}
+            </Text>
+          </TouchableOpacity>
+
+
           <Text
             style={[
               styles.headerTitle,
@@ -1233,6 +2186,450 @@ export default function MatchScreen() {
               📍 {obtenerTextoRadio()}
             </Text>
           </View>
+
+
+          {deportistasOcultosPorFiltros >
+            0 && (
+            <Text
+              style={[
+                styles.filtrosOcultosTexto,
+                {
+                  color:
+                    colors.secondaryText,
+                },
+              ]}
+            >
+              🔒{' '}
+              {
+                deportistasOcultosPorFiltros
+              }{' '}
+              {deportistasOcultosPorFiltros ===
+              1
+                ? 'deportista oculto por tus filtros'
+                : 'deportistas ocultos por tus filtros'}
+            </Text>
+          )}
+        </View>
+
+
+        {/* ==================================================
+            PANEL DE PREFERENCIAS (BOTÓN FILTROS)
+        ================================================== */}
+
+        {panelFiltrosAbierto && (
+          <View
+            style={[
+              styles.filtersPanel,
+              {
+                backgroundColor:
+                  colors.card,
+
+                borderColor:
+                  colors.border,
+              },
+            ]}
+          >
+            {/* ENCABEZADO DEL PANEL */}
+
+            <View
+              style={
+                styles.panelHeader
+              }
+            >
+              <Text
+                style={[
+                  styles.panelTitulo,
+                  {
+                    color:
+                      colors.text,
+                  },
+                ]}
+              >
+                🎯 Preferencias de match
+              </Text>
+
+
+              <TouchableOpacity
+                onPress={() =>
+                  setPanelFiltrosAbierto(
+                    false
+                  )
+                }
+                accessibilityLabel="Cerrar preferencias"
+              >
+                <Text
+                  style={[
+                    styles.panelCerrar,
+                    {
+                      color:
+                        colors.secondaryText,
+                    },
+                  ]}
+                >
+                  ✕
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+
+            {/* RANGO DE EDAD */}
+
+            <Text
+              style={[
+                styles.sliderLabel,
+                {
+                  color:
+                    colors.secondaryText,
+                },
+              ]}
+            >
+              Rango de edad
+            </Text>
+
+
+            <Text
+              style={[
+                styles.sliderValorTexto,
+                {
+                  color:
+                    colors.primary,
+                },
+              ]}
+            >
+              {edadMin}{' '}
+              –{' '}
+              {edadMax}{' '}
+              años
+            </Text>
+
+
+            <SliderLine
+              valorMin={
+                edadMin
+              }
+
+              valorMax={
+                edadMax
+              }
+
+              escalaMin={
+                16
+              }
+
+              escalaMax={
+                100
+              }
+
+              esRango={
+                true
+              }
+
+              onCambiar={(
+                nuevoMin,
+                nuevoMax
+              ) => {
+                setEdadMin(
+                  nuevoMin
+                );
+
+                setEdadMax(
+                  nuevoMax
+                );
+              }}
+            />
+
+
+            {/* RADIO DE BÚSQUEDA */}
+
+            <Text
+              style={[
+                styles.sliderLabel,
+                {
+                  color:
+                    colors.secondaryText,
+
+                  marginTop:
+                    18,
+                },
+              ]}
+            >
+              Radio de búsqueda
+            </Text>
+
+
+            <Text
+              style={[
+                styles.sliderValorTexto,
+                {
+                  color:
+                    colors.primary,
+                },
+              ]}
+            >
+              {radioBusqueda ===
+              0
+                ? 'Sin límite de distancia'
+                : `${radioBusqueda} km`}
+            </Text>
+
+
+            <SliderLine
+              valorMin={
+                radioBusqueda
+              }
+
+              valorMax={
+                radioBusqueda
+              }
+
+              escalaMin={
+                0
+              }
+
+              escalaMax={
+                100
+              }
+
+              esRango={
+                false
+              }
+
+              onCambiar={(
+                nuevoValor
+              ) =>
+                setRadioBusqueda(
+                  nuevoValor
+                )
+              }
+            />
+
+
+            {/* GUARDAR PREFERENCIAS */}
+
+            <TouchableOpacity
+              style={[
+                styles.guardarButton,
+                {
+                  backgroundColor:
+                    colors.primary,
+
+                  opacity:
+                    guardandoPreferencias
+                      ? 0.6
+                      : 1,
+                },
+              ]}
+              disabled={
+                guardandoPreferencias
+              }
+              onPress={
+                guardarPreferencias
+              }
+            >
+              {guardandoPreferencias ? (
+                <ActivityIndicator
+                  size="small"
+                  color="#FFFFFF"
+                />
+              ) : (
+                <Text
+                  style={
+                    styles.guardarButtonText
+                  }
+                >
+                  Guardar preferencias
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
+
+        {/* ==================================================
+            RADAR DE CERCANÍA
+        ================================================== */}
+
+        <View
+          style={[
+            styles.radarContainer,
+            {
+              backgroundColor:
+                colors.card,
+
+              borderColor:
+                colors.border,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.radarTitulo,
+              {
+                color:
+                  colors.text,
+              },
+            ]}
+          >
+            📡 Radar de cercanía
+          </Text>
+
+
+          <Text
+            style={[
+              styles.radarSubtitulo,
+              {
+                color:
+                  colors.secondaryText,
+              },
+            ]}
+          >
+            {sinUbicacion
+              ? 'Sin ubicación GPS — no se pueden ver distancias'
+              : puntosRadar.length ===
+                  0
+                ? 'Sin deportistas disponibles todavía'
+                : `${puntosDentroDelRadio} ${
+                    puntosDentroDelRadio ===
+                    1
+                      ? 'persona'
+                      : 'personas'
+                  } en tu radio${
+                    puntosFueraDelRadio >
+                    0
+                      ? ` · ${puntosFueraDelRadio} fuera de rango`
+                      : ''
+                  }`}
+          </Text>
+
+
+          <View
+            style={[
+              styles.radarCirculo,
+              {
+                backgroundColor: isDark
+                  ? 'rgba(34, 197, 94, 0.05)'
+                  : 'rgba(37, 99, 235, 0.05)',
+              },
+            ]}
+          >
+            {/* AROS CONCÉNTRICOS */}
+
+            <View
+              style={[
+                styles.radarAroMedio,
+                {
+                  borderColor: isDark
+                    ? 'rgba(148, 163, 184, 0.25)'
+                    : 'rgba(37, 99, 235, 0.18)',
+                },
+              ]}
+            />
+
+
+            <View
+              style={[
+                styles.radarAroInterno,
+                {
+                  borderColor: isDark
+                    ? 'rgba(148, 163, 184, 0.3)'
+                    : 'rgba(37, 99, 235, 0.22)',
+                },
+              ]}
+            />
+
+
+            {/* TU POSICIÓN (CENTRO) */}
+
+            <View
+              style={[
+                styles.radarYoDot,
+                {
+                  backgroundColor:
+                    colors.primary,
+                },
+              ]}
+            />
+
+
+            <Text
+              style={[
+                styles.radarYoEtiqueta,
+                {
+                  color:
+                    colors.secondaryText,
+                },
+              ]}
+            >
+              Tú
+            </Text>
+
+
+            {/* PUNTOS DE LOS DEMÁS USUARIOS */}
+
+            {puntosRadar.map(
+              (
+                punto
+              ) => (
+                <TouchableOpacity
+                  key={
+                    punto.id
+                  }
+                  style={[
+                    styles.radarPunto,
+                    {
+                      top:
+                        punto.top,
+
+                      left:
+                        punto.left,
+
+                      opacity:
+                        punto.opacidad,
+
+                      backgroundColor: punto.dentro
+                        ? colors.primary
+                        : isDark
+                          ? 'rgba(148, 163, 184, 0.7)'
+                          : 'rgba(100, 116, 139, 0.7)',
+                    },
+                  ]}
+                  onPress={() =>
+                    Alert.alert(
+                      punto.full_name ??
+                        'Deportista',
+
+                      punto.dentro
+                        ? `📍 A ${punto.distanceKm.toFixed(1)} km de ti`
+                        : `📍 A ${punto.distanceKm.toFixed(1)} km de ti — fuera de tu radio de búsqueda`
+                    )
+                  }
+                />
+              )
+            )}
+
+
+            {/* SIN UBICACIÓN (SUPERPUESTO) */}
+
+            {sinUbicacion && (
+              <View
+                style={
+                  styles.radarSinUbicacion
+                }
+              >
+                <Text
+                  style={[
+                    styles.radarSinUbicacionTexto,
+                    {
+                      color:
+                        colors.secondaryText,
+                    },
+                  ]}
+                >
+                  📍 Sin ubicación GPS — no se pueden ver distancias
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
 
 
@@ -1254,28 +2651,45 @@ export default function MatchScreen() {
         >
           {/* AVATAR */}
 
-          <View
-            style={[
-              styles.avatarPlaceholder,
-              {
-                backgroundColor:
-                  colors.primarySoft,
-
-                borderColor:
-                  isDark
+          {perfilActual.avatar_url ? (
+            <Image
+              source={{
+                uri:
+                  perfilActual.avatar_url,
+              }}
+              style={[
+                styles.avatarImagen,
+                {
+                  borderColor: isDark
                     ? colors.border
                     : 'transparent',
-              },
-            ]}
-          >
-            <Text
-              style={
-                styles.avatarEmoji
-              }
+                },
+              ]}
+            />
+          ) : (
+            <View
+              style={[
+                styles.avatarPlaceholder,
+                {
+                  backgroundColor:
+                    colors.primarySoft,
+
+                  borderColor:
+                    isDark
+                      ? colors.border
+                      : 'transparent',
+                },
+              ]}
             >
-              🧢
-            </Text>
-          </View>
+              <Text
+                style={
+                  styles.avatarEmoji
+                }
+              >
+                🧢
+              </Text>
+            </View>
+          )}
 
 
           {/* NOMBRE */}
@@ -2085,5 +3499,454 @@ const styles =
 
       fontWeight:
         '600',
+    },
+
+
+    // ========================================================
+    // BOTÓN FILTROS + PANEL DE PREFERENCIAS
+    // ========================================================
+
+    filterButton: {
+      position:
+        'absolute',
+
+      top: 2,
+
+      right: 0,
+
+      width: 40,
+
+      height: 40,
+
+      borderRadius: 20,
+
+      borderWidth: 1,
+
+      justifyContent:
+        'center',
+
+      alignItems:
+        'center',
+    },
+
+
+    filterButtonEmoji: {
+      fontSize: 16,
+    },
+
+
+    filtersPanel: {
+      width: '100%',
+
+      maxWidth: 520,
+
+      borderWidth: 1,
+
+      borderRadius: 16,
+
+      padding: 16,
+
+      marginTop: 14,
+    },
+
+
+    panelHeader: {
+      flexDirection:
+        'row',
+
+      justifyContent:
+        'space-between',
+
+      alignItems:
+        'center',
+    },
+
+
+    panelTitulo: {
+      fontSize: 14,
+
+      fontWeight:
+        '700',
+    },
+
+
+    panelCerrar: {
+      fontSize: 16,
+
+      fontWeight:
+        '700',
+
+      paddingHorizontal: 6,
+
+      paddingVertical: 2,
+    },
+
+
+    sliderLabel: {
+      fontSize: 12,
+
+      fontWeight:
+        '600',
+
+      marginTop: 16,
+    },
+
+
+    sliderValorTexto: {
+      fontSize: 20,
+
+      fontWeight:
+        '700',
+
+      textAlign:
+        'center',
+
+      marginTop: 4,
+    },
+
+
+    sliderWrap: {
+      width:
+        ANCHO_SLIDER +
+        TAMANO_PERILLA,
+
+      height: 34,
+
+      marginTop: 10,
+
+      alignSelf:
+        'center',
+    },
+
+
+    sliderTrack: {
+      position:
+        'absolute',
+
+      top: 14,
+
+      left:
+        TAMANO_PERILLA /
+        2,
+
+      width: ANCHO_SLIDER,
+
+      height: 6,
+
+      borderRadius: 3,
+    },
+
+
+    sliderTrackActiva: {
+      position:
+        'absolute',
+
+      top: 14,
+
+      height: 6,
+
+      borderRadius: 3,
+    },
+
+
+    sliderPerilla: {
+      position:
+        'absolute',
+
+      top: 4,
+
+      width: TAMANO_PERILLA,
+
+      height: TAMANO_PERILLA,
+
+      borderRadius:
+        TAMANO_PERILLA /
+        2,
+
+      borderWidth: 2,
+
+      justifyContent:
+        'center',
+
+      alignItems:
+        'center',
+
+      elevation: 3,
+
+      shadowColor:
+        '#000000',
+
+      shadowOffset: {
+        width: 0,
+
+        height: 1,
+      },
+
+      shadowOpacity: 0.2,
+
+      shadowRadius: 2,
+    },
+
+
+    sliderPerillaPunto: {
+      width: 8,
+
+      height: 8,
+
+      borderRadius: 4,
+    },
+
+
+    guardarButton: {
+      width: '100%',
+
+      paddingVertical: 12,
+
+      borderRadius: 10,
+
+      justifyContent:
+        'center',
+
+      alignItems:
+        'center',
+
+      marginTop: 22,
+    },
+
+
+    guardarButtonText: {
+      color:
+        '#FFFFFF',
+
+      fontWeight:
+        '700',
+
+      fontSize: 14,
+    },
+
+
+    filtrosOcultosTexto: {
+      fontSize: 11,
+
+      fontWeight:
+        '600',
+
+      marginTop: 5,
+
+      textAlign:
+        'center',
+    },
+
+
+    // ========================================================
+    // RADAR DE CERCANÍA
+    // ========================================================
+
+    radarContainer: {
+      width: '100%',
+
+      maxWidth: 520,
+
+      borderWidth: 1,
+
+      borderRadius: 16,
+
+      paddingVertical: 16,
+
+      paddingHorizontal: 12,
+
+      marginTop: 12,
+
+      marginBottom: 22,
+
+      alignItems:
+        'center',
+    },
+
+
+    radarTitulo: {
+      fontSize: 15,
+
+      fontWeight:
+        '700',
+    },
+
+
+    radarSubtitulo: {
+      fontSize: 11,
+
+      marginTop: 4,
+
+      textAlign:
+        'center',
+    },
+
+
+    radarCirculo: {
+      width: RADAR_TAMANO,
+
+      height: RADAR_TAMANO,
+
+      marginTop: 12,
+
+      borderRadius:
+        RADAR_TAMANO /
+        2,
+
+      borderWidth: 1,
+
+      borderColor:
+        'rgba(100, 116, 139, 0.35)',
+    },
+
+
+    radarAroMedio: {
+      position:
+        'absolute',
+
+      top: 45,
+
+      left: 45,
+
+      width: 150,
+
+      height: 150,
+
+      borderRadius: 75,
+
+      borderWidth: 1,
+    },
+
+
+    radarAroInterno: {
+      position:
+        'absolute',
+
+      top: 82,
+
+      left: 82,
+
+      width: 76,
+
+      height: 76,
+
+      borderRadius: 38,
+
+      borderWidth: 1,
+    },
+
+
+    radarYoDot: {
+      position:
+        'absolute',
+
+      top:
+        RADAR_CENTRO -
+        TAMANO_PUNTO_YO /
+          2,
+
+      left:
+        RADAR_CENTRO -
+        TAMANO_PUNTO_YO /
+          2,
+
+      width: TAMANO_PUNTO_YO,
+
+      height: TAMANO_PUNTO_YO,
+
+      borderRadius:
+        TAMANO_PUNTO_YO /
+        2,
+    },
+
+
+    radarYoEtiqueta: {
+      position:
+        'absolute',
+
+      top:
+        RADAR_CENTRO +
+        12,
+
+      left:
+        RADAR_CENTRO -
+        30,
+
+      width: 60,
+
+      fontSize: 10,
+
+      fontWeight:
+        '700',
+
+      textAlign:
+        'center',
+    },
+
+
+    radarPunto: {
+      position:
+        'absolute',
+
+      width: TAMANO_PUNTO_RADAR,
+
+      height: TAMANO_PUNTO_RADAR,
+
+      borderRadius:
+        TAMANO_PUNTO_RADAR /
+        2,
+
+      borderWidth: 1,
+
+      borderColor:
+        'rgba(255, 255, 255, 0.6)',
+    },
+
+
+    radarSinUbicacion: {
+      position:
+        'absolute',
+
+      top: 0,
+
+      left: 0,
+
+      right: 0,
+
+      bottom: 0,
+
+      justifyContent:
+        'center',
+
+      alignItems:
+        'center',
+
+      padding: 24,
+    },
+
+
+    radarSinUbicacionTexto: {
+      fontSize: 12,
+
+      fontWeight:
+        '600',
+
+      textAlign:
+        'center',
+
+      lineHeight: 18,
+    },
+
+
+    avatarImagen: {
+      width: 100,
+
+      height: 100,
+
+      borderRadius: 50,
+
+      borderWidth: 1,
+
+      marginBottom: 14,
     },
   });

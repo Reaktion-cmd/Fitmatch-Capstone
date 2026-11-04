@@ -44,6 +44,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { useTheme } from '../../lib/ThemeContext';
 
+import {
+  CalificarEstrellas,
+} from '../../components/CalificarEstrellas';
+
 
 // ============================================================
 // TIPOS
@@ -62,6 +66,34 @@ interface EventoDetalle {
   esMio: boolean;
   unido: boolean;
   organizador: string;
+}
+
+
+interface ParticipanteItem {
+  userId: string;
+
+  nombre: string;
+}
+
+
+// Calificación que el usuario actual
+// ya le dio a alguien en este evento.
+
+interface MiCalificacion {
+  stars: number;
+
+  comment: string | null;
+}
+
+
+// Calificación abierta en el modal.
+
+interface CalificacionAbierta {
+  destinatarioId: string;
+
+  nombre: string;
+
+  existente: MiCalificacion | null;
 }
 
 
@@ -106,6 +138,46 @@ export default function EventoDetalleScreen() {
     procesando,
     setProcesando,
   ] = useState(false);
+
+
+  // ==========================================================
+  // ESTADOS DE CALIFICACIÓN
+  // ==========================================================
+
+  const [
+    usuarioId,
+    setUsuarioId,
+  ] = useState<string | null>(
+    null
+  );
+
+
+  const [
+    participantesLista,
+    setParticipantesLista,
+  ] = useState<
+    ParticipanteItem[]
+  >([]);
+
+
+  const [
+    misCalificaciones,
+    setMisCalificaciones,
+  ] = useState<
+    Record<
+      string,
+      MiCalificacion
+    >
+  >({});
+
+
+  const [
+    calificacionAbierta,
+    setCalificacionAbierta,
+  ] =
+    useState<CalificacionAbierta | null>(
+      null
+    );
 
 
   // ==========================================================
@@ -265,6 +337,166 @@ export default function EventoDetalleScreen() {
       const esMio =
         eventoData.creator_id ===
         user.id;
+
+
+      setUsuarioId(
+        user.id
+      );
+
+
+      // ------------------------------------------------------
+      // NOMBRES DE PARTICIPANTES
+      // ------------------------------------------------------
+
+      if (unido) {
+        const idsParticipantes =
+          participantes.map(
+            (
+              participante
+            ) =>
+              participante.user_id
+          );
+
+
+        const {
+          data:
+            perfilesData,
+          error:
+            perfilesError,
+        } = await supabase
+          .from('profiles')
+          .select(
+            `
+            id,
+            full_name
+            `
+          )
+          .in(
+            'id',
+            idsParticipantes
+          );
+
+
+        if (perfilesError) {
+          throw perfilesError;
+        }
+
+
+        const nombrePorId:
+          Record<
+            string,
+            string
+          > = {};
+
+
+        (
+          perfilesData ??
+          []
+        ).forEach(
+          (
+            perfilItem
+          ) => {
+            nombrePorId[
+              perfilItem.id
+            ] =
+              perfilItem.full_name ??
+              'Usuario FitMatch';
+          }
+        );
+
+
+        setParticipantesLista(
+          idsParticipantes.map(
+            (
+              idParticipante
+            ) => ({
+              userId:
+                idParticipante,
+
+              nombre:
+                nombrePorId[
+                  idParticipante
+                ] ?? 'Usuario FitMatch',
+            })
+          )
+        );
+
+
+        // ----------------------------------------------------
+        // CALIFICACIONES QUE YA DI EN ESTE EVENTO
+        // ----------------------------------------------------
+
+        const {
+          data:
+            calificacionesData,
+          error:
+            calificacionesError,
+        } = await supabase
+          .from(
+            'profile_ratings'
+          )
+          .select(
+            `
+            rated_id,
+            stars,
+            comment
+            `
+          )
+          .eq(
+            'rater_id',
+            user.id
+          )
+          .eq(
+            'event_id',
+            eventoId
+          );
+
+
+        if (calificacionesError) {
+          throw calificacionesError;
+        }
+
+
+        const mapaCalificaciones:
+          Record<
+            string,
+            MiCalificacion
+          > = {};
+
+
+        (
+          calificacionesData ??
+          []
+        ).forEach(
+          (
+            calificacion
+          ) => {
+            mapaCalificaciones[
+              calificacion.rated_id
+            ] = {
+              stars: Number(
+                calificacion.stars
+              ),
+
+              comment:
+                calificacion.comment,
+            };
+          }
+        );
+
+
+        setMisCalificaciones(
+          mapaCalificaciones
+        );
+      } else {
+        setParticipantesLista(
+          []
+        );
+
+        setMisCalificaciones(
+          {}
+        );
+      }
 
 
       // ------------------------------------------------------
@@ -1163,6 +1395,198 @@ export default function EventoDetalleScreen() {
         </View>
 
 
+        {/* CALIFICACIONES */}
+
+        {evento.unido &&
+          usuarioId && (
+            <View
+              style={[
+                styles.infoCard,
+                {
+                  backgroundColor:
+                    colors.card,
+
+                  borderColor:
+                    colors.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.sectionTitle,
+                  {
+                    color:
+                      colors.text,
+                  },
+                ]}
+              >
+                ⭐ Calificar participantes
+              </Text>
+
+
+              {/* OTROS PARTICIPANTES QUE NO SOY YO */}
+
+              {participantesLista.filter(
+                (
+                  participante
+                ) =>
+                  participante.userId !==
+                  usuarioId
+              ).length >
+              0 ? (
+                participantesLista
+                  .filter(
+                    (
+                      participante
+                    ) =>
+                      participante.userId !==
+                      usuarioId
+                  )
+                  .map(
+                    (
+                      participante
+                    ) => {
+                      const existente =
+                        misCalificaciones[
+                          participante.userId
+                        ];
+
+                      return (
+                        <View
+                          key={
+                            participante.userId
+                          }
+
+                          style={[
+                            styles.calificarFila,
+                            {
+                              borderBottomColor:
+                                colors.border,
+                            },
+                          ]}
+                        >
+                          <View
+                            style={
+                              styles.calificarInfo
+                            }
+                          >
+                            <Text
+                              style={[
+                                styles.calificarNombre,
+                                {
+                                  color:
+                                    colors.text,
+                                },
+                              ]}
+                            >
+                              {
+                                participante.nombre
+                              }
+                            </Text>
+
+                            <Text
+                              style={[
+                                styles.calificarEstrellas,
+                                {
+                                  color:
+                                    colors.secondaryText,
+                                },
+                              ]}
+                            >
+                              {existente
+                                ? `${'⭐'.repeat(
+                                    existente.stars
+                                  )}`
+                                : 'Sin calificar'}
+                            </Text>
+                          </View>
+
+
+                          <TouchableOpacity
+                            style={[
+                              styles.calificarBoton,
+                              {
+                                backgroundColor:
+                                  colors.primarySoft,
+
+                                borderColor:
+                                  colors.primary,
+                              },
+                            ]}
+                            onPress={() =>
+                              setCalificacionAbierta(
+                                {
+                                  destinatarioId:
+                                    participante.userId,
+
+                                  nombre:
+                                    participante.nombre,
+
+                                  existente:
+                                    existente ??
+                                    null,
+                                }
+                              )
+                            }
+                          >
+                            <Text
+                              style={[
+                                styles.calificarBotonTexto,
+                                {
+                                  color:
+                                    colors.primary,
+                                },
+                              ]}
+                            >
+                              {existente
+                                ? '✏️ Editar calificación'
+                                : '⭐ Calificar'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      );
+                    }
+                  )
+              ) : (
+                <View
+                  style={
+                    styles.calificarInfo
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.infoText,
+                      {
+                        color:
+                          colors.secondaryText,
+                      },
+                    ]}
+                  >
+                    Aún no hay otros participantes para calificar.
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+
+        {!evento.unido && (
+          <View>
+            <Text
+              style={[
+                styles.uneteCalificar,
+                {
+                  color:
+                    colors.secondaryText,
+                },
+              ]}
+            >
+              Únete al evento para calificar a los participantes.
+            </Text>
+          </View>
+        )}
+
+
         {/* ACCIONES */}
 
         {!evento.esMio &&
@@ -1245,6 +1669,39 @@ export default function EventoDetalleScreen() {
             </TouchableOpacity>
           )}
       </ScrollView>
+
+
+      {/* MODAL DE CALIFICACIÓN */}
+
+      <CalificarEstrellas
+        visible={
+          calificacionAbierta !==
+          null
+        }
+        nombreDestino={
+          calificacionAbierta?.nombre ??
+          ''
+        }
+        destinoId={
+          calificacionAbierta
+            ?.destinatarioId ?? ''
+        }
+        eventId={
+          evento?.id ?? null
+        }
+        calificacionExistente={
+          calificacionAbierta
+            ?.existente ?? null
+        }
+        onGuardado={() =>
+          cargarDetalle()
+        }
+        onCerrar={() =>
+          setCalificacionAbierta(
+            null
+          )
+        }
+      />
     </SafeAreaView>
   );
 }
@@ -1561,5 +2018,73 @@ const styles =
 
       fontWeight:
         'bold',
+    },
+
+
+    // ========================================================
+    // CALIFICACIONES
+    // ========================================================
+
+    calificarFila: {
+      paddingVertical: 12,
+
+      borderBottomWidth: 1,
+    },
+
+
+    calificarInfo: {
+      marginBottom: 8,
+    },
+
+
+    calificarNombre: {
+      fontSize: 15,
+
+      fontWeight:
+        '600',
+    },
+
+
+    calificarEstrellas: {
+      fontSize: 12,
+
+      marginTop: 4,
+    },
+
+
+    calificarBoton: {
+      paddingVertical: 10,
+
+      paddingHorizontal: 14,
+
+      borderRadius: 10,
+
+      borderWidth: 1,
+
+      alignSelf:
+        'flex-start',
+    },
+
+
+    calificarBotonTexto: {
+      fontSize: 13,
+
+      fontWeight:
+        '700',
+    },
+
+
+    infoText: {
+      fontSize: 13,
+    },
+
+
+    uneteCalificar: {
+      textAlign:
+        'center',
+
+      fontSize: 12,
+
+      marginTop: 14,
     },
   });

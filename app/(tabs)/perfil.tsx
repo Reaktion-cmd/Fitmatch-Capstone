@@ -31,6 +31,7 @@ import {
   Switch,
   ActivityIndicator,
 } from 'react-native';
+
 import * as ImagePicker from 'expo-image-picker';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -89,6 +90,17 @@ const DEPORTES_DISPONIBLES = [
     nombre: 'Ciclismo',
     icono: '🚴',
   },
+];
+
+
+// ============================================================
+// NIVELES DE HABILIDAD
+// ============================================================
+
+const NIVELES = [
+  'Principiante',
+  'Intermedio',
+  'Avanzado',
 ];
 
 
@@ -168,7 +180,7 @@ export default function PerfilScreen() {
   ] = useState(false);
 
 
-    // ==========================================================
+  // ==========================================================
   // FOTO DE PERFIL
   // ==========================================================
 
@@ -182,7 +194,6 @@ export default function PerfilScreen() {
     subiendoFoto,
     setSubiendoFoto,
   ] = useState(false);
-
 
 
   // ==========================================================
@@ -257,7 +268,6 @@ export default function PerfilScreen() {
   ] = useState(25);
 
 
-
   // ==========================================================
   // CALIFICACIONES RECIBIDAS
   // ==========================================================
@@ -273,6 +283,7 @@ export default function PerfilScreen() {
     } | null>(
       null
     );
+
 
   // ==========================================================
   // RECARGAR AL ENTRAR
@@ -336,12 +347,12 @@ export default function PerfilScreen() {
           ''
       );
 
+
       // Calificaciones recibidas.
 
       await cargarCalificaciones(
         user.id
       );
-
 
 
       // ------------------------------------------------------
@@ -362,6 +373,7 @@ export default function PerfilScreen() {
           bio,
           favorite_team,
           instagram,
+          avatar_url,
           sports,
           skill_level,
           search_radius_km
@@ -416,6 +428,12 @@ export default function PerfilScreen() {
 
         setInstagram(
           perfil.instagram ??
+            ''
+        );
+
+
+        setAvatarUrl(
+          perfil.avatar_url ??
             ''
         );
 
@@ -511,7 +529,6 @@ export default function PerfilScreen() {
   }
 
 
-
   // ==========================================================
   // CARGAR CALIFICACIONES RECIBIDAS
   // ==========================================================
@@ -593,7 +610,6 @@ export default function PerfilScreen() {
       );
     }
   }
-
 
 
   // ==========================================================
@@ -806,6 +822,8 @@ export default function PerfilScreen() {
       }
     );
   }
+
+
   // ==========================================================
   // GUARDAR INFORMACIÓN PERSONAL
   // ==========================================================
@@ -911,6 +929,13 @@ export default function PerfilScreen() {
 
             instagram:
               instagram.trim() ||
+              null,
+
+            sports:
+              deportes,
+
+            skill_level:
+              nivelJuego ||
               null,
 
             updated_at:
@@ -1187,7 +1212,7 @@ export default function PerfilScreen() {
             styles.header
           }
         >
-          <View
+          <TouchableOpacity
             style={[
               styles.avatarContainer,
               {
@@ -1198,15 +1223,80 @@ export default function PerfilScreen() {
                   colors.primary,
               },
             ]}
+            onPress={
+              handleElegirAvatar
+            }
+            disabled={
+              subiendoFoto
+            }
+            activeOpacity={
+              0.8
+            }
           >
-            <Text
-              style={
-                styles.avatarEmoji
-              }
+            {subiendoFoto ? (
+              <ActivityIndicator
+                color={
+                  colors.primary
+                }
+              />
+            ) : avatarUrl ? (
+              <Image
+                source={{
+                  uri: avatarUrl,
+                }}
+                style={
+                  styles.avatarImage
+                }
+              />
+            ) : nombre.trim() ? (
+              <Text
+                style={[
+                  styles.avatarInicial,
+                  {
+                    color:
+                      colors.primary,
+                  },
+                ]}
+              >
+                {nombre
+                  .trim()
+                  .charAt(0)
+                  .toUpperCase()}
+              </Text>
+            ) : (
+              <Text
+                style={
+                  styles.avatarEmoji
+                }
+              >
+                🏃‍♂️
+              </Text>
+            )}
+
+
+            {/* BOTÓN CÁMARA */}
+
+            <View
+              style={[
+                styles.cameraBadge,
+                {
+                  backgroundColor:
+                    colors.primary,
+
+                  borderColor:
+                    colors.card,
+                },
+              ]}
             >
-              🏃‍♂️
-            </Text>
-          </View>
+              <Text
+                style={
+                  styles.cameraBadgeText
+                }
+              >
+                📷
+              </Text>
+            </View>
+          </TouchableOpacity>
 
 
           <Text
@@ -1237,6 +1327,32 @@ export default function PerfilScreen() {
             ]}
           >
             {email}
+          </Text>
+
+
+          <Text
+            style={[
+              styles.userRating,
+              {
+                color:
+                  colors.secondaryText,
+              },
+            ]}
+          >
+            {resumenCalificaciones &&
+            resumenCalificaciones.promedio !==
+              null
+              ? `⭐ ${resumenCalificaciones.promedio.toFixed(
+                  1
+                )} · ${
+                  resumenCalificaciones.total
+                } reseña${
+                  resumenCalificaciones.total ===
+                  1
+                    ? ''
+                    : 's'
+                }`
+              : 'Sin calificaciones aún'}
           </Text>
 
 
@@ -1441,11 +1557,27 @@ export default function PerfilScreen() {
                 setBio
               }
               multiline
+              maxLength={500}
               placeholder="Cuéntanos algo sobre ti..."
               placeholderTextColor={
                 colors.secondaryText
               }
             />
+
+
+            {/* CONTADOR DE CARACTERES (BIO) */}
+
+            <Text
+              style={[
+                styles.charCounter,
+                {
+                  color:
+                    colors.secondaryText,
+                },
+              ]}
+            >
+              {bio.length}/500
+            </Text>
 
 
             {/* EQUIPO */}
@@ -1531,6 +1663,154 @@ export default function PerfilScreen() {
               }
               autoCapitalize="none"
             />
+
+
+            {/* DEPORTES PREFERIDOS */}
+
+            <Text
+              style={[
+                styles.label,
+                {
+                  color:
+                    colors.secondaryText,
+                },
+              ]}
+            >
+              Deportes Preferidos
+            </Text>
+
+
+            <View
+              style={
+                styles.chipContainer
+              }
+            >
+              {DEPORTES_DISPONIBLES.map(
+                (deporte) => {
+                  const seleccionado =
+                    deportes.includes(
+                      deporte.id
+                    );
+
+
+                  return (
+                    <TouchableOpacity
+                      key={
+                        deporte.id
+                      }
+                      style={[
+                        styles.sportChip,
+                        {
+                          backgroundColor:
+                            seleccionado
+                              ? colors.primarySoft
+                              : colors.input,
+
+                          borderColor:
+                            seleccionado
+                              ? colors.primary
+                              : colors.border,
+                        },
+                      ]}
+                      onPress={() =>
+                        toggleDeporte(
+                          deporte.id
+                        )
+                      }
+                    >
+                      <Text
+                        style={[
+                          styles.sportChipText,
+                          {
+                            color:
+                              seleccionado
+                                ? colors.primary
+                                : colors.text,
+                          },
+                        ]}
+                      >
+                        {deporte.icono}{' '}
+                        {
+                          deporte.nombre
+                        }
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                }
+              )}
+            </View>
+
+
+            {/* NIVEL DE HABILIDAD */}
+
+            <Text
+              style={[
+                styles.label,
+                {
+                  color:
+                    colors.secondaryText,
+                },
+              ]}
+            >
+              Nivel de Habilidad
+            </Text>
+
+
+            <View
+              style={
+                styles.chipContainer
+              }
+            >
+              {NIVELES.map(
+                (nivel) => {
+                  const seleccionado =
+                    nivelJuego ===
+                    nivel;
+
+
+                  return (
+                    <TouchableOpacity
+                      key={
+                        nivel
+                      }
+                      style={[
+                        styles.sportChip,
+                        {
+                          backgroundColor:
+                            seleccionado
+                              ? colors.primary
+                              : colors.input,
+
+                          borderColor:
+                            seleccionado
+                              ? colors.primary
+                              : colors.border,
+                        },
+                      ]}
+                      onPress={() =>
+                        setNivelJuego(
+                          nivel
+                        )
+                      }
+                    >
+                      <Text
+                        style={[
+                          styles.sportChipText,
+                          {
+                            color:
+                              seleccionado
+                                ? '#FFFFFF'
+                                : colors.text,
+                          },
+                        ]}
+                      >
+                        {nivel}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                }
+              )}
+            </View>
 
 
             {/* GUARDAR */}
@@ -1709,19 +1989,50 @@ export default function PerfilScreen() {
               </Text>
 
 
-              <Text
-                style={[
-                  styles.infoText,
-                  {
-                    color:
-                      colors.secondaryText,
-                  },
-                ]}
-              >
-                {nivelJuego ||
-                  'No especificado'}
-              </Text>
+              {nivelJuego ? (
+                <View
+                  style={
+                    styles.chipContainer
+                  }
+                >
+                  <View
+                    style={[
+                      styles.sportChip,
+                      {
+                        backgroundColor:
+                          colors.primarySoft,
 
+                        borderColor:
+                          colors.primary,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.sportChipText,
+                        {
+                          color:
+                            colors.primary,
+                        },
+                      ]}
+                    >
+                      {nivelJuego}
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <Text
+                  style={[
+                    styles.infoText,
+                    {
+                      color:
+                        colors.secondaryText,
+                    },
+                  ]}
+                >
+                  No especificado
+                </Text>
+              )}
 
               <TouchableOpacity
                 style={[
@@ -2230,6 +2541,52 @@ const styles =
     },
 
 
+    avatarImage: {
+      width: 86,
+
+      height: 86,
+
+      borderRadius: 43,
+    },
+
+
+    avatarInicial: {
+      fontSize: 36,
+
+      fontWeight:
+        'bold',
+    },
+
+
+    cameraBadge: {
+      position:
+        'absolute',
+
+      bottom: -2,
+
+      right: -2,
+
+      width: 30,
+
+      height: 30,
+
+      borderRadius: 15,
+
+      borderWidth: 2,
+
+      justifyContent:
+        'center',
+
+      alignItems:
+        'center',
+    },
+
+
+    cameraBadgeText: {
+      fontSize: 14,
+    },
+
+
     userName: {
       fontSize: 22,
 
@@ -2245,6 +2602,16 @@ const styles =
       fontSize: 12,
 
       marginTop: 4,
+    },
+
+
+    userRating: {
+      fontSize: 13,
+
+      marginTop: 6,
+
+      fontWeight:
+        '600',
     },
 
 
@@ -2424,6 +2791,16 @@ const styles =
 
       textAlignVertical:
         'top',
+    },
+
+
+    charCounter: {
+      fontSize: 11,
+
+      textAlign:
+        'right',
+
+      marginTop: -6,
     },
 
 
