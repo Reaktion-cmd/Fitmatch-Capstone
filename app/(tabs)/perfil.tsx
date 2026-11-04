@@ -336,6 +336,13 @@ export default function PerfilScreen() {
           ''
       );
 
+      // Calificaciones recibidas.
+
+      await cargarCalificaciones(
+        user.id
+      );
+
+
 
       // ------------------------------------------------------
       // 2. PERFIL
