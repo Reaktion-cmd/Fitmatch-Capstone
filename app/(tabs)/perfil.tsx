@@ -22,6 +22,7 @@ import React, {
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
@@ -30,6 +31,7 @@ import {
   Switch,
   ActivityIndicator,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -166,6 +168,23 @@ export default function PerfilScreen() {
   ] = useState(false);
 
 
+    // ==========================================================
+  // FOTO DE PERFIL
+  // ==========================================================
+
+  const [
+    avatarUrl,
+    setAvatarUrl,
+  ] = useState('');
+
+
+  const [
+    subiendoFoto,
+    setSubiendoFoto,
+  ] = useState(false);
+
+
+
   // ==========================================================
   // DATOS PERSONALES
   // ==========================================================
@@ -237,6 +256,23 @@ export default function PerfilScreen() {
     setRadioBusqueda,
   ] = useState(25);
 
+
+
+  // ==========================================================
+  // CALIFICACIONES RECIBIDAS
+  // ==========================================================
+
+  const [
+    resumenCalificaciones,
+    setResumenCalificaciones,
+  ] =
+    useState<{
+      promedio: number | null;
+
+      total: number;
+    } | null>(
+      null
+    );
 
   // ==========================================================
   // RECARGAR AL ENTRAR
@@ -468,6 +504,301 @@ export default function PerfilScreen() {
   }
 
 
+
+  // ==========================================================
+  // CARGAR CALIFICACIONES RECIBIDAS
+  // ==========================================================
+
+  async function cargarCalificaciones(
+    usuarioId: string
+  ) {
+    try {
+      const {
+        data,
+        error,
+      } = await supabase
+        .from('profile_ratings')
+        .select('stars')
+        .eq(
+          'rated_id',
+          usuarioId
+        );
+
+
+      if (error) {
+        throw error;
+      }
+
+
+      const lista = data ?? [];
+
+
+      if (
+        lista.length ===
+        0
+      ) {
+        setResumenCalificaciones(
+          {
+            promedio:
+              null,
+
+            total: 0,
+          }
+        );
+
+        return;
+      }
+
+
+      const suma =
+        lista.reduce(
+          (
+            acumulado,
+            item
+          ) =>
+            acumulado +
+            Number(item.stars),
+          0
+        );
+
+
+      setResumenCalificaciones(
+        {
+          promedio:
+            suma /
+            lista.length,
+
+          total:
+            lista.length,
+        }
+      );
+    } catch (
+      error: any
+    ) {
+      console.log(
+        'Error cargando calificaciones:',
+        error
+      );
+
+
+      setResumenCalificaciones(
+        null
+      );
+    }
+  }
+
+
+
+  // ==========================================================
+  // CAMBIAR FOTO DE PERFIL
+  // ==========================================================
+
+  async function handleElegirAvatar() {
+    if (subiendoFoto) {
+      return;
+    }
+
+
+    try {
+      // 1. PERMISO DE GALERÍA
+
+      const permiso =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (!permiso.granted) {
+        Alert.alert(
+          'Permisos',
+          'Necesitamos acceso a tus fotos para elegir una imagen de perfil.'
+        );
+
+        return;
+      }
+
+
+      // 2. ELEGIR IMAGEN
+
+      const result =
+        await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.7,
+        });
+
+
+      if (
+        result.canceled ||
+        !result.assets?.[0]?.uri
+      ) {
+        return;
+      }
+
+
+      const uri =
+        result.assets[0].uri;
+
+
+      setSubiendoFoto(
+        true
+      );
+
+
+      // 3. USUARIO AUTENTICADO
+
+      const {
+        data: {
+          user,
+        },
+        error:
+          userError,
+      } =
+        await supabase.auth.getUser();
+
+      if (userError) {
+        throw userError;
+      }
+
+
+      if (!user) {
+        Alert.alert(
+          'Sesión no encontrada',
+          'Debes iniciar sesión nuevamente.'
+        );
+
+        router.replace('/login');
+
+        return;
+      }
+
+
+      // 4. SUBIR A SUPABASE STORAGE
+
+      const response =
+        await fetch(uri);
+
+
+      const arrayBuffer =
+        await response.arrayBuffer();
+
+
+      const path =
+        `${user.id}/avatar-${Date.now()}.jpg`;
+
+
+      const {
+        error: uploadError,
+      } = await supabase.storage
+        .from('avatars')
+        .upload(
+          path,
+          arrayBuffer,
+          {
+            upsert: true,
+
+            contentType:
+              'image/jpeg',
+          }
+        );
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+
+      // 5. URL PÚBLICA
+
+      const {
+        data: urlData,
+      } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(path);
+
+
+      const urlPublica =
+        urlData.publicUrl;
+
+
+      // 6. GUARDAR EN PROFILES
+
+      const {
+        error: updateError,
+      } = await supabase
+        .from('profiles')
+        .update({
+          avatar_url:
+            urlPublica,
+
+          updated_at:
+            new Date().toISOString(),
+        })
+        .eq(
+          'id',
+          user.id
+        );
+
+      if (updateError) {
+        throw updateError;
+      }
+
+
+      setAvatarUrl(
+        urlPublica
+      );
+
+
+      Alert.alert(
+        '¡Foto actualizada!',
+        'Tu foto de perfil se actualizó correctamente.'
+      );
+    } catch (
+      error: any
+    ) {
+      console.log(
+        'Error subiendo foto:',
+        error
+      );
+
+
+      Alert.alert(
+        'Error',
+        error?.message ??
+          'No se pudo actualizar la foto de perfil.'
+      );
+    } finally {
+      setSubiendoFoto(
+        false
+      );
+    }
+  }
+
+
+  // ==========================================================
+  // TOGGLE DEPORTE (MODO EDICIÓN)
+  // ==========================================================
+
+  function toggleDeporte(
+    id: string
+  ) {
+    setDeportes(
+      (deportesActuales) => {
+        if (
+          deportesActuales.includes(
+            id
+          )
+        ) {
+          return deportesActuales.filter(
+            (item) => item !== id
+          );
+        }
+
+
+        return [
+          ...deportesActuales,
+          id,
+        ];
+      }
+    );
+  }
   // ==========================================================
   // GUARDAR INFORMACIÓN PERSONAL
   // ==========================================================
