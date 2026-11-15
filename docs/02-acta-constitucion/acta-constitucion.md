@@ -153,12 +153,34 @@ Los indicadores específicos y sus valores objetivo serán definidos a medida qu
 
 ---
 
-## 11. Estado del acta
+## 11. Control de cambios de alcance
 
-**Versión:** 0.1
+Durante el desarrollo se identificaron diferencias entre el alcance comprometido inicialmente (sección 5) y el MVP efectivamente entregado (v1.0.0). Esta sección documenta y justifica cada cambio para mantener la trazabilidad del proyecto. Los cambios se decideron en función de la validación con usuarios, la complejidad técnica y las restricciones de tiempo del acta.
 
-**Estado:** Borrador inicial.
+| Funcionalidad | Estado inicial comprometido | Estado en el MVP v1.0.0 | Justificación del cambio |
+|---|---|---|---|
+| Chat directo (RF-19) | Etapas posteriores (RF-19 en documento de requisitos v0.1) | **Incorporado al MVP** (chat individual 1:1 con Supabase Realtime) | El match sin canal de comunicación no cierra el circuito de valor del producto: tras el match mutuo el usuario necesita coordinar la actividad. Supabase Realtime permitió implementarlo sin infraestructura adicional. |
+| Calificaciones y reputación | No estaba en el alcance inicial | **Agregado al MVP** (estrellas 1–5 + reseña, por persona y por evento) | La validación con usuarios mostró la necesidad de generar confianza previa antes de asistir a una actividad con desconocidos. |
+| Radar de cercanía | No estaba en el alcance inicial | **Agregado al MVP** (distancia real vía RPC, sin exponer coordenadas) | Mejora la experiencia del match con información de distancia ya disponible; respeta el RNF-07 de privacidad. |
+| Modo claro/oscuro | No estaba en el alcance inicial | **Agregado al MVP** | Requisito no funcional de usabilidad surgido durante la fase 2. |
+| Confirmación de asistencia (RF-16) | Dentro del alcance inicial | **Postergado post-MVP** | La gestión de cupos cubre el flujo esencial de participación; la confirmación requiere notificaciones (RF-21) para resultar útil. |
+| Cancelación de participación (RF-17) | Dentro del alcance inicial | **Postergado post-MVP** | Mismo criterio que RF-16: sin notificaciones, la cancelación no informa a los afectados. |
+| Chat grupal (RF-20), notificaciones (RF-21), lista de espera (RF-22), reemplazo de participantes (RF-23) | Etapas posteriores | **Backlog post-entrega** | Valor incremental real, pero fuera del alcance académico por las restricciones de tiempo del acta. |
+
+**Alcance comprometido final (ambos documentos coinciden):** el MVP v1.0.0 entregado corresponde a — Autenticación (registro, ingreso, cierre de sesión), perfil deportivo persistente con foto, ubicación GPS/manual y radio de búsqueda, Match 1v1 con filtros de edad y radio más radar de cercanía, eventos con creación/búsqueda/inscripción y **cupos garantizados a nivel de base de datos**, chat individual en tiempo real y calificaciones con reseñas.
+
+**Integridad de inscripciones:** la gestión de cupos comprometida en el alcance inicial se implementó con una garantía a nivel del motor de datos (trigger que impide que las inscripciones simultáneas superen los cupos), detallada en el RNF-21 del documento de Requisitos No Funcionales v1.0.
+
+---
+
+## 12. Estado del acta
+
+**Versión:** 1.0
+
+**Estado:** Actualizado con el control de cambios de alcance tras la revisión del docente.
 
 **Fecha de elaboración:** 14-09-2026
+
+**Fecha de última actualización:** 15-11-2026
 
 El presente documento podrá ser actualizado durante el proyecto cuando existan cambios relevantes en el alcance, restricciones, riesgos o condiciones generales de FitMatch.

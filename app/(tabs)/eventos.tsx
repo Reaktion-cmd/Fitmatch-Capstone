@@ -955,6 +955,30 @@ export default function EventosScreen() {
         }
 
 
+        // ----------------------------------------------------
+        // EVENTO_LLENO = trigger de capacidad en la base de
+        // datos: otro usuario tomó el último cupo primero.
+        // ----------------------------------------------------
+
+        if (
+          unirseError.message
+            .includes(
+              'EVENTO_LLENO'
+            )
+        ) {
+          Alert.alert(
+            'Evento completo',
+            'El último cupo fue tomado por otro usuario. Revisa otros partidos disponibles.'
+          );
+
+
+          await cargarEventos();
+
+
+          return;
+        }
+
+
         throw unirseError;
       }
 
