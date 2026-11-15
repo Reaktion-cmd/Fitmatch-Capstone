@@ -19,6 +19,7 @@
 
 import React, {
   useCallback,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -180,6 +181,12 @@ function acotar(
 //
 // Las perillas no se cruzan: la izquierda respeta max - 1
 // y la derecha respeta min + 1.
+//
+// El gesto se maneja con UN solo PanResponder sobre una zona
+// táctil que cubre toda la pista: se puede arrastrar desde
+// cualquier punto y se ajusta la perilla más cercana. El
+// PanResponder se memoiza para que el gesto no se rompa a
+// mitad del arrastre.
 
 interface SliderLineProps {
   valorMin: number;
@@ -232,20 +239,62 @@ function SliderLine(
   };
 
 
-  // Valor del knob al iniciar el arrastre.
+  // Escala, callback y modo también por
+  // referencia: así el PanResponder se
+  // crea UNA sola vez y no se destruye en
+  // medio del arrastre (recrear los
+  // manejadores en cada render rompía el
+  // gesto y el slider se quedaba trabado).
 
-  const inicioRef =
-    useRef(0);
+  const escalaRef =
+    useRef({
+      min: escalaMin,
+
+      max: escalaMax,
+    });
+
+
+  escalaRef.current = {
+    min: escalaMin,
+
+    max: escalaMax,
+  };
+
+
+  const onCambiarRef =
+    useRef(onCambiar);
+
+
+  onCambiarRef.current = onCambiar;
+
+
+  const esRangoRef =
+    useRef(esRango);
+
+
+  esRangoRef.current = esRango;
+
+
+  // Perilla seleccionada durante el
+  // arrastre ('min' | 'max' | null).
+
+  const knobActivoRef =
+    useRef<'min' | 'max' | null>(
+      null
+    );
 
 
   function valorAPosicion(
     valor: number
   ) {
+    const escala =
+      escalaRef.current;
+
     const factor =
-      (valor - escalaMin) /
+      (valor - escala.min) /
       (
-        escalaMax -
-        escalaMin
+        escala.max -
+        escala.min
       );
 
 
@@ -258,148 +307,232 @@ function SliderLine(
   }
 
 
-  function nuevoValorConDelta(
-    deltaPx: number,
-    valorInicial: number
-  ) {
-    const deltaValor =
-      (deltaPx / ANCHO_SLIDER) *
-      (
-        escalaMax -
-        escalaMin
-      );
+  // Posición en píxeles (0 - ANCHO_SLIDER)
+  // convertida de regreso a valor.
 
+  function posicionAValor(
+    posicionPx: number
+  ) {
+    const escala =
+      escalaRef.current;
 
     return Math.round(
-      valorInicial +
-      deltaValor
+      escala.min +
+      (posicionPx / ANCHO_SLIDER) *
+      (
+        escala.max -
+        escala.min
+      )
     );
   }
 
 
-  // Perilla IZQUIERDA (solo modo rango).
+  // Mueve la perilla activa a una posición
+  // de la pista, respetando los límites
+  // (las perillas no se cruzan).
 
-  const panIzquierda =
-    PanResponder.create({
-      onStartShouldSetPanResponderCapture: () =>
-        true,
+  function moverKnob(
+    posicionPx: number
+  ) {
+    const knob =
+      knobActivoRef.current;
 
-      onMoveShouldSetPanResponderCapture: () =>
-        true,
+    if (!knob) {
+      return;
+    }
 
-      onPanResponderGrant: () => {
-        inicioRef.current =
-          valoresRef.current.min;
-      },
+    const escala =
+      escalaRef.current;
 
-      onPanResponderMove: (
-        _evento,
-        gestos
-      ) => {
-        let nuevo =
-          nuevoValorConDelta(
-            gestos.dx,
-            inicioRef.current
-          );
+    const valores =
+      valoresRef.current;
+
+    let nuevo =
+      posicionAValor(
+        posicionPx
+      );
 
 
+    if (esRangoRef.current) {
+      if (knob === 'min') {
         nuevo = acotar(
           nuevo,
-          escalaMin,
-          valoresRef.current.max -
-            1
+          escala.min,
+          valores.max - 1
         );
 
-
-        onCambiar(
+        onCambiarRef.current(
           nuevo,
-          valoresRef.current.max
+          valores.max
         );
-      },
-    });
-
-
-  // Perilla DERECHA (solo modo rango).
-
-  const panDerecha =
-    PanResponder.create({
-      onStartShouldSetPanResponderCapture: () =>
-        true,
-
-      onMoveShouldSetPanResponderCapture: () =>
-        true,
-
-      onPanResponderGrant: () => {
-        inicioRef.current =
-          valoresRef.current.max;
-      },
-
-      onPanResponderMove: (
-        _evento,
-        gestos
-      ) => {
-        let nuevo =
-          nuevoValorConDelta(
-            gestos.dx,
-            inicioRef.current
-          );
-
-
+      } else {
         nuevo = acotar(
           nuevo,
-          valoresRef.current.min +
-            1,
-          escalaMax
+          valores.min + 1,
+          escala.max
         );
 
-
-        onCambiar(
-          valoresRef.current.min,
+        onCambiarRef.current(
+          valores.min,
           nuevo
         );
-      },
-    });
+      }
+    } else {
+      nuevo = acotar(
+        nuevo,
+        escala.min,
+        escala.max
+      );
+
+      onCambiarRef.current(
+        nuevo,
+        nuevo
+      );
+    }
+  }
 
 
-  // Perilla ÚNICA (modo slider simple).
+  // ÚNICO PanResponder, montado sobre una
+  // zona transparente que cubre TODO el
+  // slider:
+  //
+  // - Se memoiza una sola vez (useMemo):
+  //   recrearlo en cada render congelaba
+  //   el arrastre después del primer
+  //   movimiento.
+  //
+  // - Tocar en cualquier parte de la pista
+  //   mueve la perilla más cercana (antes
+  //   solo servía tocar la perilla de
+  //   26 px exactos, y al juntarse ambas
+  //   quedaba inalcanzable).
+  //
+  // - onPanResponderTerminationRequest en
+  //   false: el ScrollView del panel ya no
+  //   puede robar el gesto a mitad del
+  //   arrastre.
 
-  const panUnico =
-    PanResponder.create({
-      onStartShouldSetPanResponderCapture: () =>
-        true,
+  const panSlider =
+    useMemo(
+      () =>
+        PanResponder.create({
+          onStartShouldSetPanResponderCapture: () =>
+            true,
 
-      onMoveShouldSetPanResponderCapture: () =>
-        true,
+          onStartShouldSetPanResponder: () =>
+            true,
 
-      onPanResponderGrant: () => {
-        inicioRef.current =
-          valoresRef.current.max;
-      },
+          onMoveShouldSetPanResponder: () =>
+            true,
 
-      onPanResponderMove: (
-        _evento,
-        gestos
-      ) => {
-        let nuevo =
-          nuevoValorConDelta(
-            gestos.dx,
-            inicioRef.current
-          );
+          onPanResponderTerminationRequest: () =>
+            false,
+
+          onPanResponderGrant: (
+            evento
+          ) => {
+            const x =
+              acotar(
+                (evento.nativeEvent.locationX ?? 0) -
+                  TAMANO_PERILLA /
+                    2,
+                0,
+                ANCHO_SLIDER
+              );
+
+            const valores =
+              valoresRef.current;
 
 
-        nuevo = acotar(
-          nuevo,
-          escalaMin,
-          escalaMax
-        );
+            // En modo rango se elige la
+            // perilla más cercana al toque.
+
+            if (esRangoRef.current) {
+              const distanciaMin =
+                Math.abs(
+                  x -
+                  valorAPosicion(
+                    valores.min
+                  )
+                );
+
+              const distanciaMax =
+                Math.abs(
+                  x -
+                  valorAPosicion(
+                    valores.max
+                  )
+                );
+
+              knobActivoRef.current =
+                distanciaMin <=
+                distanciaMax
+                  ? 'min'
+                  : 'max';
+            } else {
+              knobActivoRef.current =
+                'max';
+            }
 
 
-        onCambiar(
-          nuevo,
-          nuevo
-        );
-      },
-    });
+            // Si el toque cae fuera del disco
+            // de la perilla elegida, esta
+            // salta hasta el toque. Si cae
+            // dentro, se conserva su valor.
+
+            const knob =
+              knobActivoRef.current;
+
+            const valorKnob =
+              knob === 'min'
+                ? valores.min
+                : valores.max;
+
+            const distancia =
+              Math.abs(
+                x -
+                valorAPosicion(
+                  valorKnob
+                )
+              );
+
+            if (
+              distancia >
+              TAMANO_PERILLA / 2
+            ) {
+              moverKnob(x);
+            }
+          },
+
+          onPanResponderMove: (
+            evento
+          ) => {
+            moverKnob(
+              acotar(
+                (evento.nativeEvent.locationX ?? 0) -
+                  TAMANO_PERILLA /
+                    2,
+                0,
+                ANCHO_SLIDER
+              )
+            );
+          },
+
+          onPanResponderRelease: () => {
+            knobActivoRef.current =
+              null;
+          },
+
+          onPanResponderTerminate: () => {
+            knobActivoRef.current =
+              null;
+          },
+        }),
+      // Sin dependencias: todo el estado
+      // del gesto se lee por referencia.
+
+      []
+    );
 
 
   const posMin =
@@ -473,7 +606,6 @@ function SliderLine(
               left: posMin,
             },
           ]}
-          {...panIzquierda.panHandlers}
         >
           <View
             style={[
@@ -503,9 +635,6 @@ function SliderLine(
             left: posMax,
           },
         ]}
-        {...(esRango
-          ? panDerecha.panHandlers
-          : panUnico.panHandlers)}
       >
         <View
           style={[
@@ -517,6 +646,20 @@ function SliderLine(
           ]}
         />
       </View>
+
+
+      {/* ZONA TÁCTIL: capa transparente que
+          cubre todo el slider, recibe el
+          gesto y mueve la perilla más
+          cercana. Va al final para quedar
+          encima de las perillas. */}
+
+      <View
+        style={
+          styles.sliderZona
+        }
+        {...panSlider.panHandlers}
+      />
     </View>
   );
 }
@@ -3694,6 +3837,31 @@ const styles =
       height: 8,
 
       borderRadius: 4,
+    },
+
+
+    // Zona transparente que recibe los
+    // gestos del slider. zIndex y
+    // elevation la ponen por encima de
+    // las perillas también en Android.
+
+    sliderZona: {
+      position:
+        'absolute',
+
+      top: 0,
+
+      left: 0,
+
+      width:
+        ANCHO_SLIDER +
+        TAMANO_PERILLA,
+
+      height: '100%',
+
+      zIndex: 10,
+
+      elevation: 4,
     },
 
 
